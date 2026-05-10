@@ -1,7 +1,7 @@
 MAP_WIDTH = 80
 MAP_HEIGHT = 50
 TILE_SIZE = 32
-NUM_CIVS = 6
+NUM_CIVS = 9
 TURN_INTERVAL_SECONDS = 2.0
 
 # Year progression: (threshold_year, years_per_turn)
@@ -22,7 +22,7 @@ FOOD_TO_GROW_BASE = 20  # food needed per population point
 CIV_DATA = [
     {
         "name": "Americans",
-        "color": "#3399ff",
+        "color": "mediumpurple",
         "city_names": [
             "Washington", "New York", "Boston", "Chicago",
             "Denver", "Seattle", "Miami", "Dallas", "Atlanta", "Phoenix",
@@ -30,7 +30,7 @@ CIV_DATA = [
     },
     {
         "name": "Romans",
-        "color": "#cc3333",
+        "color": "yellow",
         "city_names": [
             "Rome", "Carthage", "Capua", "Neapolis",
             "Antium", "Brundisium", "Massilia", "Corinth", "Ravenna", "Mediolanum",
@@ -38,7 +38,7 @@ CIV_DATA = [
     },
     {
         "name": "Chinese",
-        "color": "#ffcc00",
+        "color": "magenta",
         "city_names": [
             "Beijing", "Shanghai", "Canton", "Nanjing",
             "Xian", "Chengdu", "Kaifeng", "Hangzhou", "Wuhan", "Tianjin",
@@ -46,7 +46,7 @@ CIV_DATA = [
     },
     {
         "name": "Egyptians",
-        "color": "#cc8800",
+        "color": "cyan",
         "city_names": [
             "Thebes", "Memphis", "Heliopolis", "Alexandria",
             "Byblos", "Amarna", "Luxor", "Aswan", "Tanis", "Bubastis",
@@ -54,7 +54,7 @@ CIV_DATA = [
     },
     {
         "name": "Greeks",
-        "color": "#9966cc",
+        "color": "green",
         "city_names": [
             "Athens", "Sparta", "Corinth", "Rhodes",
             "Argos", "Mycenae", "Olympia", "Delphi", "Ephesus", "Miletus",
@@ -62,10 +62,34 @@ CIV_DATA = [
     },
     {
         "name": "Vikings",
-        "color": "#44cccc",
+        "color": "orange",
         "city_names": [
             "Stavanger", "Hedeby", "Oslo", "Trondheim",
             "Bergen", "Uppsala", "Kaupang", "Birka", "Nidaros", "Sigtuna",
+        ],
+    },
+    {
+        "name": "Spanish",
+        "color": "grey",
+        "city_names": [
+            "Madrid", "Barcelona", "Seville", "Valencia",
+            "Toledo", "Cordoba", "Granada", "Bilbao", "Malaga", "Saragossa",
+        ],
+    },
+    {
+        "name": "Aztec",
+        "color": "lime",
+        "city_names": [
+            "Tenochtitlan", "Texcoco", "Tlacopan", "Xochimilco",
+            "Cholula", "Teotihuacan", "Tula", "Cuernavaca", "Cempoala", "Tlatelolco",
+        ],
+    },
+    {
+        "name": "Russia",
+        "color": "white",
+        "city_names": [
+            "Moscow", "Saint Petersburg", "Novgorod", "Kiev",
+            "Smolensk", "Yaroslavl", "Rostov", "Kazan", "Vladivostok", "Sochi",
         ],
     },
 ]

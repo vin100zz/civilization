@@ -21,16 +21,16 @@ const TERRAIN_COLOR = {
 
 // Slightly lighter shade for variety
 const TERRAIN_COLOR2 = {
-  ocean:     "#1e6eb4",
-  coast:     "#3088cc",
-  grassland: "#44aa44",
-  plains:    "#88c848",
-  forest:    "#246624",
-  hills:     "#8a6028",
-  mountains: "#686868",
-  desert:    "#d4b040",
-  tundra:    "#7a98a8",
-  arctic:    "#c8dce8",
+  ocean:     "#1c64a8",
+  coast:     "#2d81c7",
+  grassland: "#3f9c42",
+  plains:    "#80be40",
+  forest:    "#215f21",
+  hills:     "#825a24",
+  mountains: "#616161",
+  desert:    "#caa838",
+  tundra:    "#7290a0",
+  arctic:    "#c0d4e0",
 };
 
 // ── Sprite cache ─────────────────────────────────────────────────
@@ -74,7 +74,6 @@ let state      = null;   // currently displayed game state (may be historical)
 let _liveState = null;   // latest state received from server
 let viewX = 0;           // scroll offset in tiles
 let viewY = 0;
-let showGrid = false;
 let focusCivId = null;
 
 // ── History ───────────────────────────────────────────────────────
@@ -128,14 +127,23 @@ let hoveredCityId = null;   // city id under the mouse, or null
  * During animation this is an interpolated position; otherwise it's the
  * canonical tile-based position.
  */
+// Returns [screenPixelX, screenPixelY] for a unit (accounts for wrap + animation).
 function _unitDrawPos(unit) {
+  const mw   = state.map_width;
   const anim = _unitAnims[unit.id];
-  if (!anim) return [unit.x * TILE + 2, unit.y * TILE + 2];
+  if (!anim) {
+    return [_sx(unit.x) + 2, _sy(unit.y) + 2];
+  }
   const t    = Math.min(1, (performance.now() - anim.t0) / ANIM_DURATION);
   const ease = 1 - Math.pow(1 - t, 3);   // ease-out cubic
+  // Interpolate in screen-tile space (handles wrap correctly)
+  const fromSx = _sx(anim.fromX) + 2;
+  const toSx   = _sx(unit.x)     + 2;
+  const fromSy = _sy(anim.fromY) + 2;
+  const toSy   = _sy(unit.y)     + 2;
   return [
-    anim.fx + (anim.tx - anim.fx) * ease,
-    anim.fy + (anim.ty - anim.fy) * ease,
+    fromSx + (toSx - fromSx) * ease,
+    fromSy + (toSy - fromSy) * ease,
   ];
 }
 
@@ -152,8 +160,7 @@ function _scheduleAnimations(prevPos) {
     const p = prevPos[u.id];
     if (p && (p.x !== u.x || p.y !== u.y)) {
       _unitAnims[u.id] = {
-        fx: p.x * TILE + 2, fy: p.y * TILE + 2,
-        tx: u.x * TILE + 2, ty: u.y * TILE + 2,
+        fromX: p.x, fromY: p.y,   // tile coords (screen pos computed at draw time)
         t0: now,
       };
     }
@@ -223,6 +230,7 @@ async function _showTurn(turn) {
       state = snap;
       render();
       updateSidebar();
+      _renderStats();
     }
   } catch (err) {
     console.warn("Failed to fetch snapshot for turn", turn, err);
@@ -319,6 +327,8 @@ function connect() {
     tlSlider.value        = _maxTurn;
     tlTurnEl.textContent  = `Turn ${_maxTurn}`;
     updateSidebar();
+    _refreshTooltip();
+    _renderStats();
 
     if (!_scheduleAnimations(prevPos)) render();
   };
@@ -368,68 +378,77 @@ function render() {
  */
 function _ensureCanvasSize() {
   if (!state) return;
-  const totalW = state.map_width  * TILE;
-  const totalH = state.map_height * TILE;
-  if (mapCanvas.width !== totalW || mapCanvas.height !== totalH) {
-    mapCanvas.width  = totalW;
-    mapCanvas.height = totalH;
+  const vw = viewport.clientWidth;
+  const vh = viewport.clientHeight;
+  if (mapCanvas.width !== vw || mapCanvas.height !== vh) {
+    mapCanvas.width  = vw;
+    mapCanvas.height = vh;
   }
-  mapCanvas.style.transform = `translate(${-viewX * TILE}px, ${-viewY * TILE}px)`;
+  mapCanvas.style.transform = "";   // no CSS scroll — handled in draw code
 }
 
 /**
  * Draw one frame.  Does NOT resize the canvas — call _ensureCanvasSize()
  * first if the canvas might be stale.  Safe to call from RAF.
  */
+// Number of tile columns/rows visible on screen (+ 1 to fill partial edge tile)
+function _visibleTiles() {
+  return {
+    visW: Math.ceil(viewport.clientWidth  / TILE) + 1,
+    visH: Math.ceil(viewport.clientHeight / TILE) + 1,
+  };
+}
+
+// Convert a world tile-x to a screen pixel-x (wrapping, result may be negative or > vw)
+function _sx(tx) {
+  const mw = state.map_width;
+  return ((tx - viewX % mw + mw) % mw) * TILE;
+}
+// Convert a world tile-y to a screen pixel-y (no wrapping)
+function _sy(ty) { return (ty - viewY) * TILE; }
+
 function _renderFrame() {
   if (!state) return;
-
-  const vw = viewport.clientWidth;
-  const vh = viewport.clientHeight;
-
-  // Visible tile range (with a 2-tile buffer so animating units don't pop)
-  const x0 = Math.max(0, viewX - 2);
-  const y0 = Math.max(0, viewY - 2);
-  const x1 = Math.min(state.map_width,  viewX + Math.ceil(vw / TILE) + 3);
-  const y1 = Math.min(state.map_height, viewY + Math.ceil(vh / TILE) + 3);
-
-  drawTerrain(x0, y0, x1, y1);
-  drawResources(x0, y0, x1, y1);
-  drawCityTerritories();
-  if (showGrid) drawGrid(x0, y0, x1, y1);
+  const { visW, visH } = _visibleTiles();
+  drawTerrain(visW, visH);
+  drawResources(visW, visH);
+  drawCityTerritories(visW, visH);
   drawUnits();    // units first — cities and names render on top
   drawCities();
   drawMinimap();
 }
 
-function drawTerrain(x0, y0, x1, y1) {
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const terrain = state.terrain[y][x];
-      const col = ((x + y) % 2 === 0) ? TERRAIN_COLOR[terrain] : TERRAIN_COLOR2[terrain];
+function drawTerrain(visW, visH) {
+  for (let sy = 0; sy < visH; sy++) {
+    const ty = viewY + sy;
+    if (ty < 0 || ty >= state.map_height) continue;
+    for (let sx = 0; sx < visW; sx++) {
+      const tx  = (viewX + sx) % state.map_width;
+      const col = ((tx + ty) % 2 === 0) ? TERRAIN_COLOR[state.terrain[ty][tx]]
+                                         : TERRAIN_COLOR2[state.terrain[ty][tx]];
       mapCtx.fillStyle = col || "#333";
-      mapCtx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      mapCtx.fillRect(sx * TILE, sy * TILE, TILE, TILE);
 
-      // Road indicator
-      if (state.roads[y][x]) {
+      if (state.roads[ty][tx]) {
         mapCtx.fillStyle = "#b8a060aa";
-        mapCtx.fillRect(x * TILE + TILE/2 - 2, y * TILE, 4, TILE);
-        mapCtx.fillRect(x * TILE, y * TILE + TILE/2 - 2, TILE, 4);
+        mapCtx.fillRect(sx * TILE + TILE/2 - 2, sy * TILE, 4, TILE);
+        mapCtx.fillRect(sx * TILE, sy * TILE + TILE/2 - 2, TILE, 4);
       }
     }
   }
 }
 
-function drawResources(x0, y0, x1, y1) {
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const res = state.resources[y][x];
+function drawResources(visW, visH) {
+  for (let sy = 0; sy < visH; sy++) {
+    const ty = viewY + sy;
+    if (ty < 0 || ty >= state.map_height) continue;
+    for (let sx = 0; sx < visW; sx++) {
+      const tx  = (viewX + sx) % state.map_width;
+      const res = state.resources[ty][tx];
       if (!res || res === "none") continue;
       const col = RESOURCE_COLOR[res] || "#ffffff";
-      const cx = x * TILE + TILE / 2;
-      const cy = y * TILE + TILE / 2;
       mapCtx.beginPath();
-      mapCtx.arc(cx, cy, 4, 0, Math.PI * 2);
+      mapCtx.arc(sx * TILE + TILE / 2, sy * TILE + TILE / 2, 4, 0, Math.PI * 2);
       mapCtx.fillStyle = col;
       mapCtx.fill();
       mapCtx.strokeStyle = "#00000066";
@@ -439,24 +458,7 @@ function drawResources(x0, y0, x1, y1) {
   }
 }
 
-function drawGrid(x0, y0, x1, y1) {
-  mapCtx.strokeStyle = "#00000033";
-  mapCtx.lineWidth = 0.5;
-  for (let x = x0; x <= x1; x++) {
-    mapCtx.beginPath();
-    mapCtx.moveTo(x * TILE, y0 * TILE);
-    mapCtx.lineTo(x * TILE, y1 * TILE);
-    mapCtx.stroke();
-  }
-  for (let y = y0; y <= y1; y++) {
-    mapCtx.beginPath();
-    mapCtx.moveTo(x0 * TILE, y * TILE);
-    mapCtx.lineTo(x1 * TILE, y * TILE);
-    mapCtx.stroke();
-  }
-}
-
-function drawCityTerritories() {
+function drawCityTerritories(visW, visH) {
   if (!hoveredCityId) return;
   const city = state.cities.find(c => c.id === hoveredCityId);
   if (!city || !city.worked_tiles || !city.worked_tiles.length) return;
@@ -469,7 +471,9 @@ function drawCityTerritories() {
   mapCtx.globalAlpha = 0.45;
   mapCtx.fillStyle = color;
   for (const [tx, ty] of city.worked_tiles) {
-    mapCtx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+    const sx = _sx(tx), sy = _sy(ty);
+    if (sx < 0 || sx >= visW * TILE || sy < 0 || sy >= visH * TILE) continue;
+    mapCtx.fillRect(sx, sy, TILE, TILE);
   }
   mapCtx.restore();
 
@@ -478,20 +482,24 @@ function drawCityTerritories() {
   mapCtx.strokeStyle = color;
   mapCtx.lineWidth = 2;
   for (const [tx, ty] of city.worked_tiles) {
-    mapCtx.strokeRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
+    const sx = _sx(tx), sy = _sy(ty);
+    if (sx < 0 || sx >= visW * TILE || sy < 0 || sy >= visH * TILE) continue;
+    mapCtx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
   }
   mapCtx.restore();
 }
 
 function drawCities() {
-  const civMap   = buildCivMap();
-  const citySprite = _sprites["city"];   // HTMLImageElement | "loading" | null
+  const civMap     = buildCivMap();
+  const citySprite = _sprites["city"];
+  const { visW, visH } = _visibleTiles();
 
   for (const city of state.cities) {
     const civ   = civMap[city.civ_id];
     const color = civ ? civ.color : "#aaaaaa";
-    const cx    = city.x * TILE;
-    const cy    = city.y * TILE;
+    const cx    = _sx(city.x);
+    const cy    = _sy(city.y);
+    if (cx < 0 || cx >= visW * TILE || cy < 0 || cy >= visH * TILE) continue;
 
     // Leave a 2-px margin so the city sits slightly inside the tile
     const ox = cx + 2, oy = cy + 2, sz = TILE - 4;
@@ -539,7 +547,8 @@ function drawCities() {
 }
 
 function drawUnits() {
-  const civMap = buildCivMap();
+  const civMap          = buildCivMap();
+  const { visW, visH }  = _visibleTiles();
 
   // Group units by final tile so stacks show a count badge
   const byTile = {};
@@ -555,8 +564,9 @@ function drawUnits() {
     const color = civ ? civ.color : "#888888";
     const sz    = TILE - 4;
 
-    // Use animated (interpolated) pixel position
+    // Screen position (accounts for wrap + animation)
     const [ux, uy] = _unitDrawPos(u);
+    if (ux < -TILE || ux >= visW * TILE || uy < -TILE || uy >= visH * TILE) continue;
 
     _drawUnitTile(mapCtx, u, color, ux, uy, sz);
 
@@ -630,17 +640,16 @@ function _drawUnitTile(ctx, unit, civColor, ux, uy, sz) {
 
 function drawMinimap() {
   if (!state) return;
-  const mw = state.map_width * MINI;
-  const mh = state.map_height * MINI;
-  miniCanvas.width  = mw;
-  miniCanvas.height = mh;
+  miniCanvas.width  = state.map_width  * MINI;
+  miniCanvas.height = state.map_height * MINI;
 
   const civMap = buildCivMap();
 
-  // Terrain
+  // Terrain — sea vs land only
   for (let y = 0; y < state.map_height; y++) {
     for (let x = 0; x < state.map_width; x++) {
-      miniCtx.fillStyle = TERRAIN_COLOR[state.terrain[y][x]] || "#333";
+      const t = state.terrain[y][x];
+      miniCtx.fillStyle = (t === "ocean" || t === "coast") ? "#2a6ea6" : "#a08060";
       miniCtx.fillRect(x * MINI, y * MINI, MINI, MINI);
     }
   }
@@ -663,18 +672,24 @@ function drawMinimap() {
     miniCtx.fillRect(city.x * MINI, city.y * MINI, MINI + 1, MINI + 1);
   }
 
-  // Viewport rect
-  const vw = viewport.clientWidth;
-  const vh = viewport.clientHeight;
+  // Viewport rect — split into two pieces if it wraps around the right edge
+  const vw     = viewport.clientWidth;
+  const vh     = viewport.clientHeight;
   const tilesX = Math.ceil(vw / TILE);
   const tilesY = Math.ceil(vh / TILE);
+  const mw     = state.map_width;
+  const startX = viewX % mw;
 
   miniCtx.strokeStyle = "#ffffff88";
   miniCtx.lineWidth = 1;
-  miniCtx.strokeRect(
-    viewX * MINI, viewY * MINI,
-    tilesX * MINI, tilesY * MINI
-  );
+  if (startX + tilesX <= mw) {
+    miniCtx.strokeRect(startX * MINI, viewY * MINI, tilesX * MINI, tilesY * MINI);
+  } else {
+    const w1 = mw - startX;
+    const w2 = tilesX - w1;
+    miniCtx.strokeRect(startX * MINI, viewY * MINI, w1 * MINI, tilesY * MINI);
+    miniCtx.strokeRect(0,             viewY * MINI, w2 * MINI, tilesY * MINI);
+  }
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────
@@ -796,12 +811,12 @@ document.addEventListener("keydown", (e) => {
   if (!state) return;
   const vw = viewport.clientWidth;
   const vh = viewport.clientHeight;
-  const maxX = state.map_width  - Math.ceil(vw / TILE);
   const maxY = state.map_height - Math.ceil(vh / TILE);
+  const mw   = state.map_width;
 
   switch (e.key) {
-    case "ArrowLeft":  viewX = Math.max(0,    viewX - SCROLL_SPEED); break;
-    case "ArrowRight": viewX = Math.min(maxX, viewX + SCROLL_SPEED); break;
+    case "ArrowLeft":  viewX = ((viewX - SCROLL_SPEED) % mw + mw) % mw; break;
+    case "ArrowRight": viewX = (viewX + SCROLL_SPEED) % mw; break;
     case "ArrowUp":    viewY = Math.max(0,    viewY - SCROLL_SPEED); break;
     case "ArrowDown":  viewY = Math.min(maxY, viewY + SCROLL_SPEED); break;
     default: return;
@@ -823,30 +838,135 @@ document.addEventListener("mousemove", (e) => {
   const dy = Math.round((drag.startY - e.clientY) / TILE);
   const vw = viewport.clientWidth;
   const vh = viewport.clientHeight;
-  viewX = Math.max(0, Math.min(state.map_width  - Math.ceil(vw / TILE), drag.ox + dx));
+  const mw = state.map_width;
+  viewX = ((drag.ox + dx) % mw + mw) % mw;
   viewY = Math.max(0, Math.min(state.map_height - Math.ceil(vh / TILE), drag.oy + dy));
   render();
 });
 
 document.addEventListener("mouseup", () => { drag = null; });
 
-// ── Tooltip on hover ──────────────────────────────────────────────
-viewport.addEventListener("mousemove", (e) => {
-  if (!state || drag) { tooltip.style.display = "none"; return; }
-  const rect = viewport.getBoundingClientRect();
-  const tx = Math.floor((e.clientX - rect.left) / TILE) + viewX;
-  const ty = Math.floor((e.clientY - rect.top)  / TILE) + viewY;
+// ── Tooltip ───────────────────────────────────────────────────────
+let _lastMouseEvent = null;   // last MouseEvent over the viewport
 
-  if (tx < 0 || ty < 0 || tx >= state.map_width || ty >= state.map_height) {
-    tooltip.style.display = "none";
-    return;
+// ── Stats ─────────────────────────────────────────────────────────
+let _techList  = [];   // loaded once from /api/techs
+let _statsOpen = false;
+
+async function _loadTechs() {
+  try {
+    const r = await fetch("/api/techs");
+    const d = await r.json();
+    _techList = d.techs || [];
+  } catch (e) { console.warn("Could not load tech list", e); }
+}
+
+function _toggleStats() {
+  _statsOpen = !_statsOpen;
+  document.getElementById("stats-panel").style.display = _statsOpen ? "flex" : "none";
+  if (_statsOpen) _renderStats();
+}
+
+function _renderStats() {
+  if (!_statsOpen || !state) return;
+
+  // Update turn label in header
+  document.getElementById("stats-turn-label").textContent =
+    `Turn ${state.turn}  —  ${state.year}`;
+
+  const content = document.getElementById("stats-content");
+
+  // Group units by civ
+  const unitsByCiv = {};
+  for (const u of state.units) {
+    if (!unitsByCiv[u.civ_id]) unitsByCiv[u.civ_id] = [];
+    unitsByCiv[u.civ_id].push(u);
+  }
+  // Population by civ (sum city populations)
+  const popByCiv = {};
+  for (const c of state.cities) {
+    popByCiv[c.civ_id] = (popByCiv[c.civ_id] || 0) + c.population;
   }
 
-  const terrain = state.terrain[ty][tx];
-  const resource = state.resources[ty][tx];
-  const city = state.cities.find(c => c.x === tx && c.y === ty);
-  const units = state.units.filter(u => u.x === tx && u.y === ty);
+  let html = "";
 
+  for (const civ of state.civs) {
+    const units    = unitsByCiv[civ.id] || [];
+    const pop      = popByCiv[civ.id]   || 0;
+    const deadCls  = civ.is_alive ? "" : " civ-card-dead";
+
+    // ── Card ──────────────────────────────────────────────────────
+    html += `<div class="civ-card${deadCls}" style="border-top:3px solid ${civ.color}">`;
+
+    // Name
+    html += `<div class="civ-card-name" style="color:${civ.color}">`
+          + `${civ.name}${civ.is_alive ? "" : " ☠"}</div>`;
+
+    // Summary
+    html += `<div class="stat-block">`;
+    html += `<div class="stat-row"><span class="stat-lbl">Population</span><span class="stat-val">${pop}</span></div>`;
+    html += `<div class="stat-row"><span class="stat-lbl">Cities</span><span class="stat-val">${civ.num_cities}</span></div>`;
+    html += `<div class="stat-row"><span class="stat-lbl">Units</span><span class="stat-val">${civ.num_units}</span></div>`;
+    html += `<div class="stat-row"><span class="stat-lbl">Gold</span><span class="stat-val">${civ.gold}</span></div>`;
+    html += `</div>`;
+
+    // Unit breakdown
+    const typeCount = {};
+    for (const u of units) typeCount[u.name] = (typeCount[u.name] || 0) + 1;
+    const types = Object.entries(typeCount).sort((a, b) => a[0].localeCompare(b[0]));
+    if (types.length) {
+      html += `<div class="unit-block">`;
+      html += `<div class="unit-block-title">Units</div>`;
+      for (const [name, cnt] of types)
+        html += `<div class="unit-row"><span>${name}</span><span class="unit-count">×${cnt}</span></div>`;
+      html += `</div>`;
+    }
+
+    // Tech list
+    if (_techList.length) {
+      const researched = new Set(civ.researched_techs || []);
+      let currentEra = null;
+      html += `<div class="tech-block">`;
+      for (const tech of _techList) {
+        if (tech.era !== currentEra) {
+          currentEra = tech.era;
+          html += `<div class="tech-era">${tech.era}</div>`;
+        }
+        const known = researched.has(tech.key);
+        if (known) {
+          html += `<div class="tech-chip tech-known" `
+                + `style="background:${civ.color}22;border-color:${civ.color}66;color:${civ.color}" `
+                + `title="${tech.description}">● ${tech.name}</div>`;
+        } else {
+          html += `<div class="tech-chip tech-unknown" title="${tech.description}">○ ${tech.name}</div>`;
+        }
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;  // .civ-card
+  }
+
+  content.innerHTML = html;
+}
+
+function _refreshTooltip() {
+  const e = _lastMouseEvent;
+  if (!e || !state || drag) { tooltip.style.display = "none"; return; }
+
+  const rect = viewport.getBoundingClientRect();
+  const mw   = state.map_width;
+  const tx   = ((Math.floor((e.clientX - rect.left) / TILE) + viewX) % mw + mw) % mw;
+  const ty   = Math.floor((e.clientY - rect.top)  / TILE) + viewY;
+
+  if (ty < 0 || ty >= state.map_height) { tooltip.style.display = "none"; return; }
+
+  const terrain  = state.terrain[ty][tx];
+  const resource = state.resources[ty][tx];
+  const city     = state.cities.find(c => c.x === tx && c.y === ty);
+  const units    = state.units.filter(u => u.x === tx && u.y === ty);
+
+  // Sync hovered city (triggers re-render if changed)
   const newHoveredCityId = city ? city.id : null;
   if (newHoveredCityId !== hoveredCityId) {
     hoveredCityId = newHoveredCityId;
@@ -855,8 +975,21 @@ viewport.addEventListener("mousemove", (e) => {
 
   let html = `<b>${terrain}</b> (${tx},${ty})`;
   if (resource && resource !== "none") html += `<br>Resource: ${resource.replace(/_/g, " ")}`;
+
+  // Tile yields
+  if (state.tile_yields) {
+    const [tyFood, tyProd, tyTrade] = state.tile_yields[ty][tx];
+    html += `<br>&#x1F33E;${tyFood} &nbsp;&#x2699;${tyProd} &nbsp;&#x1F4B0;${tyTrade}`;
+  }
+  // Improvements
+  const improvements = [];
+  if (state.irrigation && state.irrigation[ty][tx]) improvements.push("Irrigation");
+  if (state.mines     && state.mines[ty][tx])      improvements.push("Mine");
+  if (state.roads     && state.roads[ty][tx])      improvements.push("Road");
+  if (improvements.length) html += `<br><i>${improvements.join(", ")}</i>`;
+
   if (city) {
-    const civ = state.civs.find(c => c.id === city.civ_id);
+    const civ      = state.civs.find(c => c.id === city.civ_id);
     const civColor = civ ? civ.color : "#aaaaaa";
     html += `<br><span style="color:${civColor}">&#x1F3D9; <b>${city.name}</b></span> &mdash; ${civ ? civ.name : "?"}`;
     html += `<br>Pop: ${city.population}`;
@@ -866,18 +999,16 @@ viewport.addEventListener("mousemove", (e) => {
     const fned = city.food_needed   ?? (20 + city.population * 10);
     html += `<br>&#x1F33E; Food: ${fsto}/${fned} (+${fpt}/turn)`;
 
-    const ppt     = city.production_per_turn ?? "?";
-    const psto    = city.production_stored   ?? 0;
-    const upkeep  = city.unit_upkeep         ?? 0;
-    const upkeepStr = upkeep > 0 ? ` <span style="color:#e07070">-${upkeep} upkeep</span>` : "";
+    const ppt    = city.production_per_turn ?? "?";
+    const psto   = city.production_stored   ?? 0;
+    const upkeep = city.unit_upkeep         ?? 0;
     if (city.production_order) {
       const po  = city.production_order;
       const pct = po.cost > 0 ? Math.round(po.progress / po.cost * 100) : 100;
-      const label = po.key.replace(/_/g, " ");
       html += `<br>&#x2699; Prod: ${psto}/${po.cost} (+${ppt}/turn${upkeep > 0 ? `, -${upkeep} upkeep` : ""})`;
-      html += `<br>&#x1F528; ${po.type === "unit" ? "Unit" : "Building"}: ${label} (${pct}%)`;
+      html += `<br>&#x1F528; ${po.type === "unit" ? "Unit" : "Building"}: ${po.key.replace(/_/g, " ")} (${pct}%)`;
     } else {
-      html += `<br>&#x2699; Production: +${ppt}/turn${upkeep > 0 ? ` <span style="color:#e07070">(-${upkeep} upkeep)</span>` : ""} (idle)`;
+      html += `<br>&#x2699; Production: +${ppt}/turn${upkeep > 0 ? ` (-${upkeep} upkeep)` : ""} (idle)`;
     }
 
     if (city.buildings && city.buildings.length)
@@ -887,17 +1018,23 @@ viewport.addEventListener("mousemove", (e) => {
     if (maintained.length)
       html += `<br>&#x2694; Units: ${maintained.map(u => u.name).join(", ")}`;
   }
-  if (units.length) {
-    html += `<br>Units: ${units.map(u => u.name).join(", ")}`;
-  }
 
-  tooltip.innerHTML = html;
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.clientX - rect.left + 14) + "px";
-  tooltip.style.top  = (e.clientY - rect.top  + 14) + "px";
+  if (units.length)
+    html += `<br>Units: ${units.map(u => u.name).join(", ")}`;
+
+  tooltip.innerHTML      = html;
+  tooltip.style.display  = "block";
+  tooltip.style.left     = (e.clientX - rect.left + 14) + "px";
+  tooltip.style.top      = (e.clientY - rect.top  + 14) + "px";
+}
+
+viewport.addEventListener("mousemove", (e) => {
+  _lastMouseEvent = e;
+  _refreshTooltip();
 });
 
 viewport.addEventListener("mouseleave", () => {
+  _lastMouseEvent = null;
   tooltip.style.display = "none";
   if (hoveredCityId !== null) { hoveredCityId = null; render(); }
 });
@@ -912,10 +1049,8 @@ document.getElementById("btn-new-game").addEventListener("click", () => {
   // sends back the new state with a different game_id.
 });
 
-document.getElementById("btn-toggle-grid").addEventListener("click", () => {
-  showGrid = !showGrid;
-  render();
-});
+document.getElementById("btn-stats").addEventListener("click", _toggleStats);
+document.getElementById("btn-close-stats").addEventListener("click", _toggleStats);
 
 document.getElementById("speed-slider").addEventListener("input", (e) => {
   // Communicate desired interval to server (for future use)
@@ -927,4 +1062,5 @@ window.addEventListener("resize", () => render());
 
 // ── Boot ──────────────────────────────────────────────────────────
 showOverlay("CONNECTING…");
+_loadTechs();
 connect();

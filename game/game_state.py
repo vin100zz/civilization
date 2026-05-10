@@ -83,7 +83,7 @@ class GameState:
         civ.cities[city.id] = city
         self._city_index[city.id] = city
         self.tiles[y][x].city_id = city.id
-        city.select_worked_tiles(self.tiles)
+        self._allocate_worked_tiles()   # re-allocate all cities after founding
         city.production_order = ProductionOrder("unit", "warrior")
         return city
 
@@ -98,6 +98,9 @@ class GameState:
         self.turn += 1
         self.year = self._compute_year()
 
+        # Allocate tiles exclusively before any city processing
+        self._allocate_worked_tiles()
+
         for civ in list(self.civs.values()):
             if not civ.is_alive:
                 continue
@@ -110,12 +113,77 @@ class GameState:
         return self.events
 
     # ------------------------------------------------------------------
+    # Tile allocation
+    # ------------------------------------------------------------------
+
+    def _allocate_worked_tiles(self) -> None:
+        """Assign each workable tile to at most one city — the closest one within
+        Chebyshev radius 2. Ties broken by city id for determinism.
+        Each city then works its best tiles up to its population count."""
+        from game.terrain import TERRAIN_DEFS
+
+        all_cities = [
+            city for civ in self.civs.values() for city in civ.cities.values()
+        ]
+
+        for city in all_cities:
+            city.worked_tiles = []
+
+        if not all_cities:
+            return
+
+        # City-centre tiles are handled directly in compute_yields — exclude them
+        city_centers = {(city.x, city.y) for city in all_cities}
+
+        # Accumulate candidate tiles per city
+        city_candidates: Dict[str, list] = {city.id: [] for city in all_cities}
+
+        for y in range(MAP_HEIGHT):
+            for x in range(MAP_WIDTH):
+                if (x, y) in city_centers:
+                    continue
+                tile = self.tiles[y][x]
+                td = TERRAIN_DEFS[tile.terrain]
+                if not td.is_passable and not td.is_water:
+                    continue   # mountains etc. can't be worked
+
+                best_city = None
+                best_ch = 3  # sentinel > radius 2
+
+                for city in all_cities:
+                    dx = min(abs(city.x - x), MAP_WIDTH - abs(city.x - x))
+                    dy = abs(city.y - y)
+                    ch = max(dx, dy)
+                    if ch > 2:
+                        continue
+                    # Prefer smaller distance; break ties by id (deterministic)
+                    if ch < best_ch or (
+                        ch == best_ch
+                        and best_city is not None
+                        and city.id < best_city.id
+                    ):
+                        best_ch = ch
+                        best_city = city
+
+                if best_city is not None:
+                    f, p, t = tile.yields()
+                    score = f * 2 + p + t
+                    city_candidates[best_city.id].append((score, x, y))
+
+        city_map = {city.id: city for city in all_cities}
+        for cid, candidates in city_candidates.items():
+            city = city_map[cid]
+            candidates.sort(reverse=True)
+            city.worked_tiles = [
+                (x, y) for _, x, y in candidates[: city.population]
+            ]
+
+    # ------------------------------------------------------------------
     # Economy helpers called by bot
     # ------------------------------------------------------------------
 
     def process_city_turn(self, city: City, civ: Civilization) -> Optional[Unit]:
         """Advance city economy. Returns a new Unit if production completed."""
-        city.select_worked_tiles(self.tiles)
         food, prod, gold, science = city.compute_yields(self.tiles)
 
         # Unit upkeep: 1 production per unit homed to this city
@@ -123,16 +191,15 @@ class GameState:
             1 for u in self._unit_index.values() if u.home_city_id == city.id
         )
         city.unit_upkeep = unit_upkeep
-        city.food_per_turn = food
+        city.food_per_turn = food - city.population * 2  # net: gross minus 2 per pop
         city.production_per_turn = max(0, prod - unit_upkeep)
 
         # Food
-        city.food_stored += food - city.population  # 1 food consumed per pop
+        city.food_stored += food - city.population * 2  # 2 food consumed per pop
         if city.food_stored >= city.food_needed_to_grow():
-            if city.population < city.max_population():
-                city.population += 1
-                city.food_stored = 0
-                self._add_event(civ.name, f"{city.name} grew to size {city.population}!")
+            city.population += 1
+            city.food_stored = 0
+            self._add_event(civ.name, f"{city.name} grew to size {city.population}!")
 
         # Gold and science
         civ.gold += gold - city.upkeep_per_turn()
@@ -339,6 +406,18 @@ class GameState:
             [self.tiles[y][x].has_road for x in range(MAP_WIDTH)]
             for y in range(MAP_HEIGHT)
         ]
+        irrigation_grid = [
+            [self.tiles[y][x].has_irrigation for x in range(MAP_WIDTH)]
+            for y in range(MAP_HEIGHT)
+        ]
+        mine_grid = [
+            [self.tiles[y][x].has_mine for x in range(MAP_WIDTH)]
+            for y in range(MAP_HEIGHT)
+        ]
+        tile_yields_grid = [
+            [list(self.tiles[y][x].yields()) for x in range(MAP_WIDTH)]
+            for y in range(MAP_HEIGHT)
+        ]
 
         cities = [
             city.to_dict()
@@ -360,6 +439,9 @@ class GameState:
             "terrain": terrain_grid,
             "resources": resource_grid,
             "roads": has_road_grid,
+            "irrigation": irrigation_grid,
+            "mines": mine_grid,
+            "tile_yields": tile_yields_grid,
             "cities": cities,
             "units": units,
             "civs": [c.to_dict() for c in self.civs.values()],

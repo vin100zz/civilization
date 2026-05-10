@@ -38,7 +38,7 @@
       <!-- Controls -->
       <div id="controls">
         <button id="btn-new-game">New Game</button>
-        <button id="btn-toggle-grid">Grid</button>
+<button id="btn-stats">Stats</button>
         <label class="speed-label">Speed
           <input id="speed-slider" type="range" min="0.5" max="5" step="0.5" value="2" />
         </label>
@@ -51,6 +51,16 @@
     <div id="map-viewport">
       <canvas id="map-canvas"></canvas>
       <div id="tooltip"></div>
+
+      <!-- ── Stats overlay ────────────────────────────────────────── -->
+      <div id="stats-panel">
+        <div id="stats-header">
+          <span id="stats-title">STATISTICS</span>
+          <span id="stats-turn-label"></span>
+          <button id="btn-close-stats">✕ Close</button>
+        </div>
+        <div id="stats-content"></div>
+      </div>
 
       <!-- ── Timeline bar ──────────────────────────────────────── -->
       <div id="timeline">

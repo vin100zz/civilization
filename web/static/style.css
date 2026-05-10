@@ -305,6 +305,158 @@ html, body {
   white-space: nowrap;
 }
 
+/* ── Stats overlay ────────────────────────────────────────────── */
+#stats-panel {
+  display: none;
+  flex-direction: column;
+  position: absolute;
+  inset: 0;
+  bottom: 34px;            /* leave timeline visible */
+  background: #0e0e1aee;
+  backdrop-filter: blur(4px);
+  z-index: 4;
+  overflow: hidden;
+}
+
+#stats-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #1a1a2e;
+  border-bottom: 2px solid #f0cc44;
+  flex-shrink: 0;
+}
+
+#stats-title {
+  color: #f0cc44;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 3px;
+}
+
+#stats-turn-label {
+  color: #888;
+  font-size: 11px;
+  flex: 1;
+}
+
+#btn-close-stats {
+  background: #2a1a1a;
+  color: #ee7744;
+  border: 1px solid #884422;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+#btn-close-stats:hover { background: #3a2a1a; }
+
+#stats-content {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+/* ── Per-civ card ─────────────────────────────────────────────── */
+.civ-card {
+  flex-shrink: 0;
+  width: 188px;
+  background: #13131e;
+  border: 1px solid #2a2a40;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.civ-card-dead { opacity: 0.45; }
+
+.civ-card-name {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid #2a2a40;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Summary stats block */
+.stat-block {
+  padding: 6px 10px;
+  border-bottom: 1px solid #1e1e30;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  line-height: 1.6;
+}
+
+.stat-lbl { color: #777; font-size: 11px; }
+.stat-val { color: #d0c8a0; font-size: 11px; }
+
+/* Unit breakdown */
+.unit-block {
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid #1e1e30;
+}
+
+.unit-block-title {
+  color: #555;
+  font-size: 9px;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
+
+.unit-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #b0a880;
+}
+
+.unit-count { color: #d0c8a0; }
+
+/* Tech section */
+.tech-block {
+  padding: 6px 10px 8px;
+}
+
+.tech-era {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #555;
+  text-transform: uppercase;
+  margin-top: 6px;
+  margin-bottom: 3px;
+}
+.tech-era:first-child { margin-top: 0; }
+
+.tech-chip {
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 0 3px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.tech-known  { /* color/border set inline per civ */ }
+.tech-unknown { color: #3a3a50; border-color: transparent; }
+
 /* ── Scrollbar style ──────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: #111; }

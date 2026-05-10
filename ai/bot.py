@@ -41,6 +41,9 @@ class BotAI:
         for unit in self.civ.units.values():
             unit.reset_moves()
 
+        # Assign garrison defenders AFTER production so new units are included
+        self._garrison_map: dict = self._compute_garrison_assignments()
+
         for unit in list(self.civ.units.values()):
             self._move_unit(unit)
 
@@ -93,26 +96,34 @@ class BotAI:
     ) -> ProductionOrder:
         rng = self.state.rng
 
-        num_cities = len(self.civ.cities)
-        num_units = len(self.civ.units)
-        num_settlers = sum(
-            1 for u in self.civ.units.values() if u.unit_def_key == "settler"
-        )
-        num_workers = sum(
-            1 for u in self.civ.units.values() if u.unit_def_key == "worker"
-        )
+        num_cities   = len(self.civ.cities)
+        num_units    = len(self.civ.units)
+        num_settlers = sum(1 for u in self.civ.units.values() if u.unit_def_key == "settler")
+        num_workers  = sum(1 for u in self.civ.units.values() if u.unit_def_key == "worker")
 
-        # Priority 1: granary if no food building and population small
+        best_military = self._best_military_unit(buildable_units)
+
+        # Priority 0: city has no garrison — build a defender immediately
+        city_defended = any(
+            u.x == city.x and u.y == city.y
+            and not u.has_ability(UnitAbility.FOUND_CITY)
+            and not u.has_ability(UnitAbility.IMPROVE_TERRAIN)
+            for u in self.civ.units.values()
+        )
+        if not city_defended and best_military:
+            return ProductionOrder("unit", best_military)
+
+        # Priority 1: granary
         if "granary" in buildable_buildings and "granary" not in city.buildings:
             return ProductionOrder("building", "granary")
 
-        # Priority 2: barracks if none
+        # Priority 2: barracks
         if "barracks" in buildable_buildings and "barracks" not in city.buildings:
             if num_units > 3:
                 return ProductionOrder("building", "barracks")
 
-        # Priority 3: more settlers if we have few cities and enough military
-        if num_settlers == 0 and num_cities < 5 and num_units >= num_cities * 2:
+        # Priority 3: expand — send a settler as long as we have basic defence
+        if num_settlers == 0 and num_units > num_cities:
             if "settler" in buildable_units:
                 return ProductionOrder("unit", "settler")
 
@@ -120,19 +131,16 @@ class BotAI:
         if num_workers < num_cities and "worker" in buildable_units:
             return ProductionOrder("unit", "worker")
 
-        # Priority 5: military units
-        best_military = self._best_military_unit(buildable_units)
+        # Priority 5: military
         if best_military and (num_units < num_cities * 3 or rng.random() < 0.6):
             return ProductionOrder("unit", best_military)
 
         # Priority 6: buildings
-        priority_buildings = ["library", "marketplace", "temple", "aqueduct",
-                              "colosseum", "university", "factory"]
-        for bk in priority_buildings:
+        for bk in ["library", "marketplace", "temple", "aqueduct",
+                   "colosseum", "university", "factory"]:
             if bk in buildable_buildings:
                 return ProductionOrder("building", bk)
 
-        # Default: warrior
         return ProductionOrder("unit", "warrior")
 
     def _best_military_unit(self, buildable: List[str]) -> Optional[str]:
@@ -164,21 +172,32 @@ class BotAI:
             return "settle"
         if unit.has_ability(UnitAbility.IMPROVE_TERRAIN):
             return "improve"
-        # All military units always attack — no peace
+        if unit.id in self._garrison_map:
+            return "garrison"
         return "attack"
 
     def _execute_unit_action(self, unit: Unit, action: str) -> bool:
         """Execute action. Returns True if the unit moved/acted."""
-        rng = self.state.rng
-
         if action == "settle":
             return self._act_settler(unit)
         elif action == "improve":
             return self._act_worker(unit)
+        elif action == "garrison":
+            return self._act_garrison(unit)
         elif action == "attack":
             return self._act_attacker(unit)
         else:
             return self._act_explorer(unit)
+
+    def _act_garrison(self, unit: Unit) -> bool:
+        """Move toward assigned city and hold position there."""
+        city = self._garrison_map.get(unit.id)
+        if city is None:
+            return self._act_attacker(unit)
+        if unit.x == city.x and unit.y == city.y:
+            unit.moves_left = 0
+            return False          # already in position
+        return self._step_toward(unit, city.x, city.y)
 
     def _act_settler(self, unit: Unit) -> bool:
         # Found city if location is good; else move to better spot
@@ -275,6 +294,54 @@ class BotAI:
                 self.state.rng.randint(0, MAP_HEIGHT - 1),
             )
         return self._step_toward(unit, unit._goal[0], unit._goal[1])
+
+    # ------------------------------------------------------------------
+    # Garrison assignment
+    # ------------------------------------------------------------------
+
+    def _compute_garrison_assignments(self) -> dict:
+        """
+        Assign exactly one military unit per city as garrison defender.
+        Returns unit_id → City.
+
+        Pass 1 — units already sitting on a city tile claim that city.
+        Pass 2 — remaining undefended cities get the closest free unit.
+        """
+        unit_to_city: dict = {}
+        defended_cities: set = set()
+
+        def is_military(u: Unit) -> bool:
+            return (
+                not u.has_ability(UnitAbility.FOUND_CITY)
+                and not u.has_ability(UnitAbility.IMPROVE_TERRAIN)
+            )
+
+        # Pass 1: units already in a city
+        for city in self.civ.cities.values():
+            for u in self.civ.units.values():
+                if (u.x == city.x and u.y == city.y
+                        and is_military(u)
+                        and u.id not in unit_to_city):
+                    unit_to_city[u.id] = city
+                    defended_cities.add(city.id)
+                    break
+
+        # Pass 2: undefended cities — find closest free military unit
+        for city in self.civ.cities.values():
+            if city.id in defended_cities:
+                continue
+            best_unit, best_dist = None, float("inf")
+            for u in self.civ.units.values():
+                if u.id in unit_to_city or not is_military(u):
+                    continue
+                d = abs(u.x - city.x) + abs(u.y - city.y)
+                if d < best_dist:
+                    best_dist, best_unit = d, u
+            if best_unit:
+                unit_to_city[best_unit.id] = city
+                defended_cities.add(city.id)
+
+        return unit_to_city
 
     # ------------------------------------------------------------------
     # Movement helpers
@@ -378,10 +445,12 @@ class BotAI:
             return False
         if tile.city_id:
             return False
-        # Must be far from other cities
+        # Chebyshev distance ≥ 5 so territory radii (2 tiles) don't overlap
         for civ in self.state.civs.values():
             for city in civ.cities.values():
-                if abs(city.x - x) + abs(city.y - y) < 4:
+                dx = min(abs(city.x - x), MAP_WIDTH - abs(city.x - x))
+                dy = abs(city.y - y)
+                if max(dx, dy) < 5:
                     return False
         return True
 
@@ -405,19 +474,36 @@ class BotAI:
         return best_pos
 
     def _city_site_score(self, x: int, y: int) -> int:
+        """Score a candidate site by the yields of tiles it would exclusively own."""
         from game.terrain import TerrainType
+        all_cities = [
+            city for civ in self.state.civs.values() for city in civ.cities.values()
+        ]
         score = 0
         for dy in range(-2, 3):
             for dx in range(-2, 3):
+                if dx == 0 and dy == 0:
+                    continue
                 tx = (x + dx) % MAP_WIDTH
                 ty = y + dy
                 if not (0 <= ty < MAP_HEIGHT):
+                    continue
+                my_ch = max(abs(dx), abs(dy))
+                # Tile is ours only if no existing city is as close or closer
+                contested = False
+                for city in all_cities:
+                    cdx = min(abs(city.x - tx), MAP_WIDTH - abs(city.x - tx))
+                    cdy = abs(city.y - ty)
+                    if max(cdx, cdy) <= my_ch:
+                        contested = True
+                        break
+                if contested:
                     continue
                 tile = self.state.tiles[ty][tx]
                 f, p, t = tile.yields()
                 score += f * 2 + p + t
                 if tile.terrain == TerrainType.COAST:
-                    score += 2  # bonus for coastal trade
+                    score += 2
         return score
 
     # ------------------------------------------------------------------

@@ -134,6 +134,26 @@ async def new_game(seed: int = 42):
     return {"status": "ok", "seed": seed}
 
 
+@app.get("/api/techs")
+async def get_techs():
+    """Return the full ordered tech list (key, name, era, description, cost)."""
+    from game.tech import _TECH_LIST
+    era_order = ["ancient", "classical", "medieval", "renaissance", "industrial", "modern"]
+    techs_by_era = {e: [] for e in era_order}
+    for t in _TECH_LIST:
+        techs_by_era.get(t.era, []).append({
+            "key": t.key,
+            "name": t.name,
+            "era": t.era,
+            "description": t.description,
+            "cost": t.cost,
+        })
+    ordered = []
+    for era in era_order:
+        ordered.extend(techs_by_era[era])
+    return {"techs": ordered}
+
+
 @app.get("/api/unit-sprites")
 async def unit_sprites():
     """Return the list of unit-type keys that have a sprite in resources/units/."""
