@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Civilization</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ── Left panel ─────────────────────────────────────────── -->
+    <aside id="sidebar">
+      <div id="sidebar-title">CIVILIZATION</div>
+
+      <!-- Minimap -->
+      <div id="minimap-container">
+        <canvas id="minimap"></canvas>
+      </div>
+
+      <!-- Status -->
+      <div id="status-panel">
+        <div id="active-civ-name">Loading…</div>
+        <div class="status-row"><span class="lbl">Population</span><span id="st-pop">—</span></div>
+        <div class="status-row"><span class="lbl">Year</span><span id="st-year">—</span></div>
+        <div class="status-row"><span class="lbl">Treasury</span><span id="st-gold">—</span></div>
+        <div class="status-row"><span class="lbl">Tax / Sci</span><span id="st-rates">—</span></div>
+        <div class="status-row"><span class="lbl">Research</span><span id="st-research">—</span></div>
+        <div class="status-row"><span class="lbl">Turn</span><span id="st-turn">—</span></div>
+      </div>
+
+      <!-- Civilization list -->
+      <div id="civ-list-header">CIVILIZATIONS</div>
+      <div id="civ-list"></div>
+
+      <!-- Event log -->
+      <div id="log-header">EVENT LOG</div>
+      <div id="event-log"></div>
+
+      <!-- Controls -->
+      <div id="controls">
+        <button id="btn-new-game">New Game</button>
+        <button id="btn-toggle-grid">Grid</button>
+        <label class="speed-label">Speed
+          <input id="speed-slider" type="range" min="0.5" max="5" step="0.5" value="2" />
+        </label>
+      </div>
+
+      <div id="sidebar-footer">Observing — AI is playing</div>
+    </aside>
+
+    <!-- ── Map viewport ───────────────────────────────────────── -->
+    <div id="map-viewport">
+      <canvas id="map-canvas"></canvas>
+      <div id="tooltip"></div>
+
+      <!-- ── Timeline bar ──────────────────────────────────────── -->
+      <div id="timeline">
+        <button id="btn-live" class="tl-live-btn">● LIVE</button>
+        <button id="btn-prev" class="tl-arrow-btn" title="Tour précédent">&#9664;</button>
+        <button id="btn-next" class="tl-arrow-btn" title="Tour suivant">&#9654;</button>
+        <span id="tl-turn">Turn 0</span>
+        <input id="tl-slider" type="range" min="0" max="0" step="1" value="0" />
+        <span id="tl-total">/ 0</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/game.js"></script>
+</body>
+</html>
