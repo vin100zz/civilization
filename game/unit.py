@@ -40,16 +40,23 @@ _UNIT_LIST = [
     UnitDef("cannon",    "Cannon",    80, 8, 1, 1, ["gunpowder"]),
     UnitDef("trireme",   "Trireme",   40, 1, 1, 3, ["map_making"], is_naval=True),
     UnitDef("caravel",   "Caravel",   60, 2, 1, 3, ["navigation"], is_naval=True),
+    UnitDef("arquebusier", "Arquebusier", 70, 6, 3, 1, ["printing_press"]),
+    UnitDef("frigate",     "Frigate",     80, 4, 2, 4, ["navigation", "printing_press"], is_naval=True),
+    UnitDef("rifleman",    "Rifleman",    90, 7, 6, 1, ["industrialization"]),
+    UnitDef("ironclad",    "Ironclad",    100, 6, 5, 4, ["steam_engine", "industrialization"], is_naval=True),
+    UnitDef("tank",        "Tank",        120, 10, 6, 3, ["combustion"]),
+    UnitDef("infantry",    "Infantry",    110, 8, 8, 1, ["radio"]),
 ]
 
 UNIT_DEFS: Dict[str, UnitDef] = {u.key: u for u in _UNIT_LIST}
 
 
-def get_buildable_units(researched: set) -> List[str]:
+def get_buildable_units(researched: set, coastal: bool = False) -> List[str]:
     return [
         key
         for key, ud in UNIT_DEFS.items()
         if all(p in researched for p in ud.prerequisites)
+        and (not ud.is_naval or coastal)
     ]
 
 

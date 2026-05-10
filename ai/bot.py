@@ -79,7 +79,8 @@ class BotAI:
         if city.production_order is not None:
             return
 
-        buildable_units = get_buildable_units(self.civ.researched_techs)
+        coastal = city.is_coastal(self.state.tiles)
+        buildable_units = get_buildable_units(self.civ.researched_techs, coastal=coastal)
         buildable_buildings = get_buildable_buildings(
             self.civ.researched_techs, city.buildings
         )
@@ -101,7 +102,8 @@ class BotAI:
         num_settlers = sum(1 for u in self.civ.units.values() if u.unit_def_key == "settler")
         num_workers  = sum(1 for u in self.civ.units.values() if u.unit_def_key == "worker")
 
-        best_military = self._best_military_unit(buildable_units)
+        coastal = city.is_coastal(self.state.tiles)
+        best_military = self._best_military_unit(buildable_units, naval=coastal)
 
         # Priority 0: city has no garrison — build a defender immediately
         city_defended = any(
@@ -143,16 +145,23 @@ class BotAI:
 
         return ProductionOrder("unit", "warrior")
 
-    def _best_military_unit(self, buildable: List[str]) -> Optional[str]:
-        """Choose the strongest affordable military unit."""
-        military = [
+    def _best_military_unit(self, buildable: List[str], naval: bool = False) -> Optional[str]:
+        """Choose the strongest affordable military unit.
+        If *naval* is True, prefer naval units; otherwise prefer land units."""
+        candidates = [
             k for k in buildable
             if not UNIT_DEFS[k].abilities  # no special abilities = combat unit
-            and not UNIT_DEFS[k].is_naval
+            and UNIT_DEFS[k].is_naval == naval
         ]
-        if not military:
+        if not candidates:
+            # Fall back to the other category
+            candidates = [
+                k for k in buildable
+                if not UNIT_DEFS[k].abilities
+            ]
+        if not candidates:
             return None
-        return max(military, key=lambda k: UNIT_DEFS[k].attack + UNIT_DEFS[k].defense)
+        return max(candidates, key=lambda k: UNIT_DEFS[k].attack + UNIT_DEFS[k].defense)
 
     # ------------------------------------------------------------------
     # Unit actions

@@ -9,7 +9,7 @@ from game.map_generator import generate_map, find_valid_start_positions
 from game.city import City, ProductionOrder
 from game.civilization import Civilization
 from game.game_state import GameState
-from game.constants import MAP_WIDTH, MAP_HEIGHT
+from game.constants import MAP_WIDTH, MAP_HEIGHT, NUM_CIVS
 
 import random
 
@@ -53,6 +53,12 @@ def test_era_order_covers_all_techs():
     ordered = tech_era_order()
     assert set(ordered) == set(TECH_DEFS.keys())
 
+def test_modern_tech_chain_availability():
+    available = get_available_techs({"electricity", "democracy"})
+    assert "combustion" in available
+    assert "radio" in available
+    assert "flight" not in available
+
 
 # ── Buildings ────────────────────────────────────────────────────
 
@@ -78,6 +84,10 @@ def test_warrior_always_buildable():
 def test_archer_requires_bronze_working():
     assert "archer" not in get_buildable_units(set())
     assert "archer" in get_buildable_units({"bronze_working"})
+
+def test_tank_requires_combustion():
+    assert "tank" not in get_buildable_units({"electricity"})
+    assert "tank" in get_buildable_units({"electricity", "combustion"})
 
 def test_unit_instance():
     u = Unit("warrior", "civ1", 5, 5)
@@ -110,10 +120,10 @@ def test_map_has_land_and_ocean():
 def test_start_positions():
     tiles = generate_map(seed=1)
     rng = random.Random(1)
-    positions = find_valid_start_positions(tiles, 6, rng)
-    assert len(positions) == 6
+    positions = find_valid_start_positions(tiles, NUM_CIVS, rng)
+    assert len(positions) == NUM_CIVS
     # Check uniqueness
-    assert len(set(positions)) == 6
+    assert len(set(positions)) == NUM_CIVS
 
 
 # ── City ─────────────────────────────────────────────────────────
@@ -161,7 +171,7 @@ def test_civilization_has_tech():
 def test_game_state_initializes():
     gs = GameState(seed=7)
     assert gs.turn == 0
-    assert len(gs.civs) == 6
+    assert len(gs.civs) == NUM_CIVS
     for civ in gs.civs.values():
         assert len(civ.cities) >= 1
         assert len(civ.units) >= 1

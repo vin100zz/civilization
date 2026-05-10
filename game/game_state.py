@@ -241,13 +241,38 @@ class GameState:
             return None
         else:
             veteran = city.has_barracks()
-            unit = Unit(order.item_key, civ.id, city.x, city.y, veteran)
+            # Naval units spawn on an adjacent water tile
+            spawn_x, spawn_y = city.x, city.y
+            if UNIT_DEFS[order.item_key].is_naval:
+                water = self._find_coastal_spawn(city)
+                if water:
+                    spawn_x, spawn_y = water
+                else:
+                    # No adjacent water — cancel production silently
+                    city.production_order = None
+                    return None
+            unit = Unit(order.item_key, civ.id, spawn_x, spawn_y, veteran)
             unit.home_city_id = city.id
             civ.units[unit.id] = unit
             uname = unit.unit_def.name
             self._add_event(civ.name, f"{city.name} produced a {uname}")
             city.production_order = None
             return unit
+
+    def _find_coastal_spawn(self, city: City) -> Optional[Tuple[int, int]]:
+        """Return the first adjacent water tile for spawning a naval unit, or None."""
+        from game.terrain import TERRAIN_DEFS
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                if dx == 0 and dy == 0:
+                    continue
+                tx = (city.x + dx) % MAP_WIDTH
+                ty = city.y + dy
+                if not (0 <= ty < MAP_HEIGHT):
+                    continue
+                if TERRAIN_DEFS[self.tiles[ty][tx].terrain].is_water:
+                    return (tx, ty)
+        return None
 
     # ------------------------------------------------------------------
     # Combat
@@ -304,6 +329,12 @@ class GameState:
         new_civ = self.civs.get(attacker.civ_id)
 
         if old_civ:
+            # Destroy all units produced by (homed to) this city
+            doomed = [u for u in list(self._unit_index.values())
+                      if u.home_city_id == city.id]
+            for u in doomed:
+                self._remove_unit(u)
+
             old_civ.cities.pop(city.id, None)
             if not old_civ.cities:
                 old_civ.is_alive = False

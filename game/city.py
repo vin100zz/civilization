@@ -107,6 +107,23 @@ class City:
     # Tile working
     # ------------------------------------------------------------------
 
+    def is_coastal(self, tiles: List[List["Tile"]]) -> bool:
+        """True if any tile adjacent (8-connected) to the city is water."""
+        from game.terrain import TERRAIN_DEFS
+        map_h = len(tiles)
+        map_w = len(tiles[0])
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                if dx == 0 and dy == 0:
+                    continue
+                tx = (self.x + dx) % map_w
+                ty = self.y + dy
+                if not (0 <= ty < map_h):
+                    continue
+                if TERRAIN_DEFS[tiles[ty][tx].terrain].is_water:
+                    return True
+        return False
+
     def select_worked_tiles(self, tiles: List[List["Tile"]]) -> None:
         """Pick the best tiles around the city to work (up to population count)."""
         from game.terrain import TERRAIN_DEFS, TerrainType
