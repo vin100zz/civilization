@@ -183,6 +183,11 @@ class BotAI:
             return "improve"
         if unit.id in self._garrison_map:
             return "garrison"
+        # Land unit currently at sea: keep moving, don't fight
+        if not unit.unit_def.is_naval:
+            from game.terrain import TERRAIN_DEFS
+            if TERRAIN_DEFS[self.state.tiles[unit.y][unit.x].terrain].is_water:
+                return "transit"
         return "attack"
 
     def _execute_unit_action(self, unit: Unit, action: str) -> bool:
@@ -193,6 +198,8 @@ class BotAI:
             return self._act_worker(unit)
         elif action == "garrison":
             return self._act_garrison(unit)
+        elif action == "transit":
+            return self._act_transit(unit)
         elif action == "attack":
             return self._act_attacker(unit)
         else:
@@ -234,8 +241,32 @@ class BotAI:
             return True
         return self._random_step(unit)
 
+    def _act_transit(self, unit: Unit) -> bool:
+        """Land unit crossing water: head toward nearest passable land tile."""
+        best_pos = None
+        best_dist = float("inf")
+        from game.terrain import TERRAIN_DEFS
+        # Find nearest land tile that isn't water
+        for dy in range(-8, 9):
+            for dx in range(-8, 9):
+                tx = (unit.x + dx) % MAP_WIDTH
+                ty = unit.y + dy
+                if not (0 <= ty < MAP_HEIGHT):
+                    continue
+                td = TERRAIN_DEFS[self.state.tiles[ty][tx].terrain]
+                if td.is_passable and not td.is_water:
+                    d = abs(dx) + abs(dy)
+                    if d < best_dist:
+                        best_dist = d
+                        best_pos = (tx, ty)
+        if best_pos:
+            return self._step_toward(unit, best_pos[0], best_pos[1])
+        return self._random_step(unit)
+
     def _act_attacker(self, unit: Unit) -> bool:
-        # 1. Attack any adjacent enemy unit immediately
+        from game.terrain import TERRAIN_DEFS
+
+        # 1. Attack any adjacent enemy unit immediately (if attack is legal)
         for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
             nx = (unit.x + dx) % MAP_WIDTH
             ny = unit.y + dy
@@ -243,11 +274,21 @@ class BotAI:
                 continue
             occupant = self.state._unit_at(nx, ny)
             if occupant and occupant.civ_id != unit.civ_id:
+                # Land units cannot attack naval units
+                if not unit.unit_def.is_naval and occupant.unit_def.is_naval:
+                    continue
+                # Naval units: only attack land units on water/coast tiles
+                if unit.unit_def.is_naval and not occupant.unit_def.is_naval:
+                    def_td = TERRAIN_DEFS[self.state.tiles[ny][nx].terrain]
+                    if not def_td.is_water:
+                        continue  # naval units cannot attack units on inland tiles
                 won = self.state.attack(unit, nx, ny)
                 unit.moves_left = 0
                 if won and unit.id in self.civ.units:
-                    unit.x = nx
-                    unit.y = ny
+                    # Only move onto the tile if passable (naval units must stay on water)
+                    if self.state.tile_is_passable_for(nx, ny, unit):
+                        unit.x = nx
+                        unit.y = ny
                     self.state.check_city_capture(unit)
                 return True
 
@@ -262,7 +303,17 @@ class BotAI:
                 if self.state._unit_at(nx, ny) is None:
                     return self._try_move(unit, nx, ny)
 
-        # 3. March toward nearest target (enemy city first, then any unit)
+        # 3. Naval units: prioritise hunting land units crossing water
+        if unit.unit_def.is_naval:
+            for u in self.state._unit_index.values():
+                if u.civ_id == unit.civ_id:
+                    continue
+                if not u.unit_def.is_naval:
+                    def_td = TERRAIN_DEFS[self.state.tiles[u.y][u.x].terrain]
+                    if def_td.is_water:
+                        return self._step_toward(unit, u.x, u.y)
+
+        # 4. March toward nearest target (enemy city first, then any unit)
         target = self._find_attack_target(unit)
         if target:
             return self._step_toward(unit, target[0], target[1])

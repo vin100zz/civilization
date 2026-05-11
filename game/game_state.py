@@ -280,20 +280,44 @@ class GameState:
 
     def attack(self, attacker: Unit, target_x: int, target_y: int) -> bool:
         """Resolve combat. Returns True if attacker wins."""
+        from game.terrain import TERRAIN_DEFS
+
         defender = self._unit_at(target_x, target_y)
         if defender is None:
             return True
+
+        att_tile = self.tiles[attacker.y][attacker.x]
+        def_tile = self.tiles[target_y][target_x]
+        att_on_water = TERRAIN_DEFS[att_tile.terrain].is_water
+        def_on_water = TERRAIN_DEFS[def_tile.terrain].is_water
+
+        # Land unit on water cannot attack
+        if not attacker.unit_def.is_naval and att_on_water:
+            return False
+
+        # Land unit cannot attack a naval unit
+        if not attacker.unit_def.is_naval and defender.unit_def.is_naval:
+            return False
 
         att_civ = self.civs[attacker.civ_id]
         def_civ = self.civs[defender.civ_id]
 
         att_str = attacker.unit_def.attack * (1.5 if attacker.veteran else 1.0)
-        def_str = defender.unit_def.defense
 
-        # Terrain defense bonus
-        tile = self.tiles[target_y][target_x]
-        from game.terrain import TERRAIN_DEFS
-        def_str *= TERRAIN_DEFS[tile.terrain].defense_bonus
+        # Land unit on water has 0 defence — always destroyed
+        if not defender.unit_def.is_naval and def_on_water:
+            def_str = 0.0
+        else:
+            def_str = float(defender.unit_def.defense)
+            def_str *= TERRAIN_DEFS[def_tile.terrain].defense_bonus
+
+        # Attacker wins automatically when defender has no defence
+        if def_str == 0:
+            self._remove_unit(defender)
+            self._add_event(att_civ.name,
+                f"{att_civ.name}'s {attacker.unit_def.name} sunk "
+                f"{def_civ.name}'s {defender.unit_def.name}!")
+            return True
 
         total = att_str + def_str
         if total == 0:
@@ -348,7 +372,10 @@ class GameState:
                             f"{new_civ.name} captured {city.name}!")
 
     def check_city_capture(self, unit: Unit) -> None:
-        """If *unit* is standing on an enemy city tile, capture it."""
+        """If *unit* is standing on an enemy city tile, capture it.
+        Naval units cannot capture cities."""
+        if unit.unit_def.is_naval:
+            return
         city = self._city_at(unit.x, unit.y)
         if city and city.civ_id != unit.civ_id:
             self.capture_city(unit, city)
@@ -373,7 +400,14 @@ class GameState:
         td = TERRAIN_DEFS[tile.terrain]
         if unit.unit_def.is_naval:
             return td.is_water
-        return td.is_passable
+        if td.is_passable:
+            return True
+        # Steam engine: land units can traverse water
+        if td.is_water:
+            civ = self.civs.get(unit.civ_id)
+            if civ and "steam_engine" in civ.researched_techs:
+                return True
+        return False
 
     def neighboring_enemy_unit(self, unit: Unit, radius: int = 3) -> Optional[Unit]:
         for u in self._unit_index.values():
