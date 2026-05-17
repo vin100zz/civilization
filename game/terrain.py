@@ -31,33 +31,53 @@ class TerrainDef:
 
 TERRAIN_DEFS: Dict[TerrainType, TerrainDef] = {
     TerrainType.OCEAN: TerrainDef(
-        "Ocean", 1, 1.0, 1, 0, 2, "#1a6bb5", False, True
+        name="Ocean", movement_cost=1, defense_bonus=1.0,
+        food=1, production=0, trade=2, color="#1a6bb5",
+        is_passable=False, is_water=True,
     ),
     TerrainType.COAST: TerrainDef(
-        "Coast", 1, 1.0, 1, 0, 2, "#3388cc", True, True
+        name="Coast", movement_cost=1, defense_bonus=1.0,
+        food=1, production=0, trade=2, color="#3388cc",
+        is_passable=True, is_water=True,
     ),
     TerrainType.GRASSLAND: TerrainDef(
-        "Grassland", 1, 1.0, 2, 1, 0, "#44aa44", True, False
+        name="Grassland", movement_cost=1, defense_bonus=1.0,
+        food=2, production=0, trade=1, color="#44aa44",
+        is_passable=True, is_water=False,
     ),
     TerrainType.PLAINS: TerrainDef(
-        "Plains", 1, 1.0, 1, 1, 1, "#88cc44", True, False
+        name="Plains", movement_cost=1, defense_bonus=1.0,
+        food=1, production=1, trade=1, color="#88cc44",
+        is_passable=True, is_water=False,
     ),
     TerrainType.FOREST: TerrainDef(
-        "Forest", 2, 1.5, 1, 2, 0, "#226622", True, False
+        name="Forest", movement_cost=2, defense_bonus=1.5,
+        food=1, production=1, trade=1, color="#226622",
+        is_passable=True, is_water=False,
     ),
     TerrainType.HILLS: TerrainDef(
-        "Hills", 2, 2.0, 1, 2, 0, "#8b6914", True, False
+        name="Hills", movement_cost=2, defense_bonus=2.0,
+        food=1, production=1, trade=0, color="#8b6914",
+        is_passable=True, is_water=False,
     ),
     TerrainType.MOUNTAINS: TerrainDef(
-        "Mountains", 3, 3.0, 0, 1, 0, "#6b6b6b", False, False
+        name="Mountains", movement_cost=3, defense_bonus=3.0,
+        food=0, production=1, trade=0, color="#6b6b6b",
+        is_passable=False, is_water=False,
     ),
     TerrainType.DESERT: TerrainDef(
-        "Desert", 1, 1.0, 0, 1, 0, "#ccaa44", True, False
+        name="Desert", movement_cost=1, defense_bonus=1.0,
+        food=0, production=1, trade=0, color="#ccaa44",
+        is_passable=True, is_water=False,
     ),
     TerrainType.TUNDRA: TerrainDef(
-        "Tundra", 1, 1.0, 1, 0, 0, "#7a9aaa", True, False
+        name="Tundra", movement_cost=1, defense_bonus=1.0,
+        food=1, production=0, trade=0, color="#7a9aaa",
+        is_passable=True, is_water=False,
     ),
     TerrainType.ARCTIC: TerrainDef(
-        "Arctic", 2, 1.0, 0, 0, 0, "#ccdded", True, False
+        name="Arctic", movement_cost=2, defense_bonus=1.0,
+        food=0, production=0, trade=0, color="#ccdded",
+        is_passable=True, is_water=False,
     ),
 }

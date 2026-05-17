@@ -48,14 +48,38 @@ function _loadSprite(key, url) {
 // City sprite
 _loadSprite("city", "/resources/city/city.png");
 
-// Unit sprites — discovered at runtime so dropping a new PNG is enough
-fetch("/api/unit-sprites")
-  .then(r => r.json())
-  .then(({ sprites }) => {
-    for (const key of sprites) {
-      _loadSprite(key, `/resources/units/${key}.png`);
-    }
-  });
+// Terrain sprites
+const _TERRAIN_TYPES = [
+  "ocean", "coast", "grassland", "plains", "forest",
+  "hills", "mountains", "desert", "tundra", "arctic",
+];
+for (const t of _TERRAIN_TYPES)
+  _loadSprite("terrain_" + t, `/resources/terrain/${t}.png`);
+
+// Resource sprites (game key → filename mapping for renamed entries)
+const _RESOURCE_FILE = {
+  wheat:       "wheat",
+  cattle:      "cattle",
+  fish:        "fish",
+  coal:        "coal",
+  iron:        "iron",
+  horses:      "horses",
+  gold_ore:    "gold",        // game uses "gold_ore", file is "gold.png"
+  oil:         "oil",
+  forest_game: "forest_game",
+};
+for (const [key, file] of Object.entries(_RESOURCE_FILE))
+  _loadSprite("resource_" + key, `/resources/resource/${file}.png`);
+
+// Unit sprites — all known types loaded at startup; missing files → null (fallback)
+const _UNIT_TYPES = [
+  "settler", "worker", "warrior", "phalanx", "chariot", "horseman",
+  "legion", "catapult", "knight", "musketeer", "cannon", "trireme",
+  "caravel", "frigate", "rifleman", "ironclad", "tank", "infantry",
+  "mechinf", "artillery", "archer",
+];
+for (const key of _UNIT_TYPES)
+  _loadSprite(key, `/resources/unit/${key}.png`);
 
 const RESOURCE_COLOR = {
   wheat:       "#f0e040",
@@ -290,6 +314,11 @@ function connect() {
 
   ws.onopen = () => {
     removeOverlay();
+    // Sync speed with the server immediately on connect
+    const speed = parseFloat(document.getElementById("speed-slider").value);
+    ws.send(JSON.stringify({ action: "set_speed", speed }));
+    // Sync pause state (resume on reconnect; reset button if needed)
+    ws.send(JSON.stringify({ action: "set_paused", paused: _gamePaused }));
   };
 
   ws.onmessage = (e) => {
@@ -324,8 +353,15 @@ function connect() {
     }
 
     state = newState;
-    tlSlider.value        = _maxTurn;
-    tlTurnEl.textContent  = `Turn ${_maxTurn}`;
+    tlSlider.value = _maxTurn;
+    if (newState.active_civ) {
+      const civData = newState.civs.find(c => c.name === newState.active_civ);
+      const color   = civData ? civData.color : '#aaa';
+      tlTurnEl.innerHTML =
+        `Turn ${_maxTurn}&nbsp;<span style="display:inline-block;width:9px;height:9px;background:${color};border:1px solid #ffffff55;vertical-align:middle;border-radius:1px"></span>`;
+    } else {
+      tlTurnEl.textContent = `Turn ${_maxTurn}`;
+    }
     updateSidebar();
     _refreshTooltip();
     _renderStats();
@@ -423,16 +459,67 @@ function drawTerrain(visW, visH) {
     const ty = viewY + sy;
     if (ty < 0 || ty >= state.map_height) continue;
     for (let sx = 0; sx < visW; sx++) {
-      const tx  = (viewX + sx) % state.map_width;
-      const col = ((tx + ty) % 2 === 0) ? TERRAIN_COLOR[state.terrain[ty][tx]]
-                                         : TERRAIN_COLOR2[state.terrain[ty][tx]];
-      mapCtx.fillStyle = col || "#333";
-      mapCtx.fillRect(sx * TILE, sy * TILE, TILE, TILE);
+      const tx      = (viewX + sx) % state.map_width;
+      const terrain = state.terrain[ty][tx];
+      const px      = sx * TILE, py = sy * TILE;
+      const sprite  = _sprites["terrain_" + terrain];
+
+      if (sprite instanceof HTMLImageElement) {
+        mapCtx.drawImage(sprite, px, py, TILE, TILE);
+        // Subtle light overlay so units/cities stand out against the terrain
+        mapCtx.fillStyle = "rgba(255,255,255,0.22)";
+        mapCtx.fillRect(px, py, TILE, TILE);
+      } else {
+        // Fallback: flat colour (checkerboard for variety while sprites load)
+        const col = ((tx + ty) % 2 === 0) ? TERRAIN_COLOR[terrain]
+                                           : TERRAIN_COLOR2[terrain];
+        mapCtx.fillStyle = col || "#333";
+        mapCtx.fillRect(px, py, TILE, TILE);
+      }
 
       if (state.roads[ty][tx]) {
         mapCtx.fillStyle = "#b8a060aa";
         mapCtx.fillRect(sx * TILE + TILE/2 - 2, sy * TILE, 4, TILE);
         mapCtx.fillRect(sx * TILE, sy * TILE + TILE/2 - 2, TILE, 4);
+      }
+
+      // Irrigation: diagonal blue hatch lines (clipped to tile)
+      if (state.irrigation && state.irrigation[ty][tx]) {
+        mapCtx.save();
+        mapCtx.beginPath();
+        mapCtx.rect(sx * TILE, sy * TILE, TILE, TILE);
+        mapCtx.clip();
+        mapCtx.strokeStyle = "#1166cccc";
+        mapCtx.lineWidth = 2;
+        mapCtx.beginPath();
+        const x0 = sx * TILE, y0 = sy * TILE;
+        for (let d = 0; d < TILE * 2; d += 9) {
+          mapCtx.moveTo(x0 + d,        y0);
+          mapCtx.lineTo(x0,            y0 + d);
+          mapCtx.moveTo(x0 + TILE,     y0 + d - TILE);
+          mapCtx.lineTo(x0 + d - TILE, y0 + TILE);
+        }
+        mapCtx.stroke();
+        mapCtx.restore();
+      }
+
+      // Mine: small charcoal circle in the bottom-right corner
+      if (state.mines && state.mines[ty][tx]) {
+        const cx = sx * TILE + TILE - 7;
+        const cy = sy * TILE + TILE - 7;
+        const r  = 5;
+        mapCtx.beginPath();
+        mapCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        mapCtx.fillStyle = "#2a2a2a";
+        mapCtx.fill();
+        mapCtx.strokeStyle = "#777777";
+        mapCtx.lineWidth = 1;
+        mapCtx.stroke();
+        // small highlight dot
+        mapCtx.beginPath();
+        mapCtx.arc(cx - 1, cy - 1, 1.5, 0, Math.PI * 2);
+        mapCtx.fillStyle = "#aaaaaa";
+        mapCtx.fill();
       }
     }
   }
@@ -446,14 +533,24 @@ function drawResources(visW, visH) {
       const tx  = (viewX + sx) % state.map_width;
       const res = state.resources[ty][tx];
       if (!res || res === "none") continue;
-      const col = RESOURCE_COLOR[res] || "#ffffff";
-      mapCtx.beginPath();
-      mapCtx.arc(sx * TILE + TILE / 2, sy * TILE + TILE / 2, 4, 0, Math.PI * 2);
-      mapCtx.fillStyle = col;
-      mapCtx.fill();
-      mapCtx.strokeStyle = "#00000066";
-      mapCtx.lineWidth = 1;
-      mapCtx.stroke();
+
+      const sprite = _sprites["resource_" + res];
+      if (sprite instanceof HTMLImageElement) {
+        // Draw centred, slightly smaller than the tile so terrain shows around it
+        const pad = 6;
+        mapCtx.drawImage(sprite, sx * TILE + pad, sy * TILE + pad,
+                         TILE - pad * 2, TILE - pad * 2);
+      } else {
+        // Fallback: coloured dot
+        const col = RESOURCE_COLOR[res] || "#ffffff";
+        mapCtx.beginPath();
+        mapCtx.arc(sx * TILE + TILE / 2, sy * TILE + TILE / 2, 4, 0, Math.PI * 2);
+        mapCtx.fillStyle = col;
+        mapCtx.fill();
+        mapCtx.strokeStyle = "#00000066";
+        mapCtx.lineWidth = 1;
+        mapCtx.stroke();
+      }
     }
   }
 }
@@ -828,6 +925,11 @@ document.addEventListener("keydown", (e) => {
 // ── Mouse drag scrolling ──────────────────────────────────────────
 let drag = null;
 
+// Prevent timeline clicks/drags from bubbling up and starting a map drag
+document.getElementById("timeline").addEventListener("mousedown", (e) => {
+  e.stopPropagation();
+});
+
 viewport.addEventListener("mousedown", (e) => {
   drag = { startX: e.clientX, startY: e.clientY, ox: viewX, oy: viewY };
 });
@@ -950,6 +1052,134 @@ function _renderStats() {
   content.innerHTML = html;
 }
 
+// ── Tooltip helpers ───────────────────────────────────────────────
+
+/** Group units by type, return HTML with sprite icons and counts. */
+function _ttUnitGroup(units) {
+  const groups = {};
+  for (const u of units) {
+    if (!groups[u.type]) groups[u.type] = { name: u.name, count: 0 };
+    groups[u.type].count++;
+  }
+  const entries = Object.entries(groups);
+  if (!entries.length) return "";
+  let html = `<div class="tt-units">`;
+  for (const [type, g] of entries) {
+    const icon = `<img class="tt-unit-icon" src="/resources/unit/${type}.png" `
+               + `alt="${g.name}" onerror="this.style.display='none'">`;
+    html += `<div class="tt-unit-entry">${icon} ${g.name}`;
+    if (g.count > 1) html += ` <b>×${g.count}</b>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+/** Net value coloring: green +, red -, grey 0. */
+function _ttNetColor(n) {
+  return n > 0 ? "#66cc66" : n < 0 ? "#cc4444" : "#778";
+}
+function _ttSign(n) { return n >= 0 ? `+${n}` : `${n}`; }
+
+/** Build the full city tooltip HTML. */
+function _buildCityTooltip(city) {
+  const civ      = state.civs.find(c => c.id === city.civ_id);
+  const civColor = civ ? civ.color : "#aaaaaa";
+
+  let html = "";
+
+  // ── Header ────────────────────────────────────────────────────────
+  html += `<div class="tt-city-name" style="color:${civColor}">🏙 ${city.name}</div>`;
+  html += `<div class="tt-city-sub">${civ ? civ.name : "?"} &nbsp;·&nbsp; Population ${city.population}</div>`;
+
+  // ── Food ──────────────────────────────────────────────────────────
+  const fg   = city.food_gross             ?? (city.food_per_turn + city.population * 2);
+  // Use server-provided breakdown when available (food_from_tiles > 0 means it was computed)
+  const fgT  = (city.food_from_tiles  > 0) ? city.food_from_tiles  : fg;
+  const fgB  = (city.food_from_tiles  > 0) ? city.food_from_buildings : 0;
+  const fc   = city.food_consumed_citizens ?? city.population * 2;
+  const fw   = city.food_consumed_workers  ?? 0;
+  const fn   = city.food_per_turn          ?? 0;
+  const fSt  = city.food_stored            ?? 0;
+  const fNd  = city.food_needed            ?? (20 + city.population * 10);
+  const fPc  = fNd > 0 ? Math.min(100, Math.round(fSt / fNd * 100)) : 0;
+
+  html += `<div class="tt-section">`;
+  html += `<div class="tt-section-title">🌾 Food</div>`;
+  html += `<div class="tt-row tt-sub"><span>Tiles</span><span style="color:#66cc66">+${fgT}</span></div>`;
+  if (fgB > 0)
+    html += `<div class="tt-row tt-sub"><span>Buildings</span><span style="color:#66cc66">+${fgB}</span></div>`;
+  html += `<div class="tt-row"><span>Citizens (${city.population})</span><span style="color:#cc7755">−${fc}</span></div>`;
+  if (fw > 0)
+    html += `<div class="tt-row"><span>Workers (${fw})</span><span style="color:#cc7755">−${fw}</span></div>`;
+  html += `<div class="tt-row tt-net"><span>Net / turn</span>`
+        + `<span style="color:${_ttNetColor(fn)}">${_ttSign(fn)}</span></div>`;
+  html += `<div class="tt-bar-label">Growth: ${fSt} / ${fNd} &nbsp;(${fPc}%)</div>`;
+  html += `<div class="tt-bar tt-bar-food"><div class="tt-bar-fill" style="width:${fPc}%"></div></div>`;
+  html += `</div>`;
+
+  // ── Production ────────────────────────────────────────────────────
+  const pg   = city.prod_gross          ?? (city.production_per_turn + (city.unit_upkeep ?? 0));
+  const pgT  = (city.prod_from_tiles  > 0) ? city.prod_from_tiles  : pg;
+  const pgB  = (city.prod_from_tiles  > 0) ? city.prod_from_buildings : 0;
+  const pu   = city.unit_upkeep         ?? 0;
+  const pn   = city.production_per_turn ?? 0;
+  const pSt  = city.production_stored   ?? 0;
+
+  html += `<div class="tt-section">`;
+  html += `<div class="tt-section-title">⚙ Production</div>`;
+  html += `<div class="tt-row tt-sub"><span>Tiles</span><span style="color:#ffaa44">+${pgT}</span></div>`;
+  if (pgB > 0)
+    html += `<div class="tt-row tt-sub"><span>Buildings</span><span style="color:#ffaa44">+${pgB}</span></div>`;
+  if (pu > 0)
+    html += `<div class="tt-row"><span>Unit upkeep (${pu})</span><span style="color:#cc7755">−${pu}</span></div>`;
+  html += `<div class="tt-row tt-net"><span>Net / turn</span>`
+        + `<span style="color:${_ttNetColor(pn)}">${_ttSign(pn)}</span></div>`;
+  if (city.production_order) {
+    const po   = city.production_order;
+    const pPc  = po.cost > 0 ? Math.min(100, Math.round(pSt / po.cost * 100)) : 100;
+    const name = po.key.replace(/_/g, " ");
+    const lbl  = po.type === "unit" ? "Unit" : "Building";
+    html += `<div class="tt-bar-label">${lbl}: <b>${name}</b> &nbsp;${pSt} / ${po.cost} &nbsp;(${pPc}%)</div>`;
+    html += `<div class="tt-bar tt-bar-prod"><div class="tt-bar-fill" style="width:${pPc}%"></div></div>`;
+  } else {
+    html += `<div class="tt-idle">No production order</div>`;
+  }
+  html += `</div>`;
+
+  // ── Units in city ─────────────────────────────────────────────────
+  const inCity = state.units.filter(u => u.x === city.x && u.y === city.y);
+  if (inCity.length) {
+    html += `<div class="tt-section">`;
+    html += `<div class="tt-section-title">Units in city (${inCity.length})</div>`;
+    html += _ttUnitGroup(inCity);
+    html += `</div>`;
+  }
+
+  // ── Maintained units ──────────────────────────────────────────────
+  const maintained = state.units.filter(u => u.home_city_id === city.id);
+  if (maintained.length) {
+    html += `<div class="tt-section">`;
+    html += `<div class="tt-section-title">Maintained units (${maintained.length}) &nbsp;·&nbsp; upkeep ${pu}</div>`;
+    html += _ttUnitGroup(maintained);
+    html += `</div>`;
+  }
+
+  // ── Buildings ─────────────────────────────────────────────────────
+  if (city.buildings && city.buildings.length) {
+    const sorted = [...city.buildings].sort();
+    html += `<div class="tt-section">`;
+    html += `<div class="tt-section-title">🏛 Buildings (${sorted.length})</div>`;
+    html += `<div class="tt-building-list">`;
+    for (const b of sorted)
+      html += `<div class="tt-building-entry">${b.replace(/_/g, " ")}</div>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  return html;
+}
+
 function _refreshTooltip() {
   const e = _lastMouseEvent;
   if (!e || !state || drag) { tooltip.style.display = "none"; return; }
@@ -973,51 +1203,36 @@ function _refreshTooltip() {
     render();
   }
 
+  // ── City tile → rich panel ─────────────────────────────────────────
+  if (city) {
+    tooltip.className     = "tt-city-mode";
+    tooltip.innerHTML     = _buildCityTooltip(city);
+    tooltip.style.display = "block";
+    // Position: keep tooltip on-screen
+    const ttW = 300, ttH = 400;
+    const vW  = rect.width, vH = rect.height;
+    const mx  = e.clientX - rect.left, my = e.clientY - rect.top;
+    const left = mx + ttW + 18 > vW ? mx - ttW - 4 : mx + 14;
+    const top  = my + ttH     > vH ? Math.max(0, my - ttH) : my + 14;
+    tooltip.style.left = left + "px";
+    tooltip.style.top  = top  + "px";
+    return;
+  }
+
+  // ── Regular tile ──────────────────────────────────────────────────
+  tooltip.className = "";
   let html = `<b>${terrain}</b> (${tx},${ty})`;
   if (resource && resource !== "none") html += `<br>Resource: ${resource.replace(/_/g, " ")}`;
 
-  // Tile yields
   if (state.tile_yields) {
     const [tyFood, tyProd, tyTrade] = state.tile_yields[ty][tx];
     html += `<br>&#x1F33E;${tyFood} &nbsp;&#x2699;${tyProd} &nbsp;&#x1F4B0;${tyTrade}`;
   }
-  // Improvements
   const improvements = [];
   if (state.irrigation && state.irrigation[ty][tx]) improvements.push("Irrigation");
   if (state.mines     && state.mines[ty][tx])      improvements.push("Mine");
   if (state.roads     && state.roads[ty][tx])      improvements.push("Road");
   if (improvements.length) html += `<br><i>${improvements.join(", ")}</i>`;
-
-  if (city) {
-    const civ      = state.civs.find(c => c.id === city.civ_id);
-    const civColor = civ ? civ.color : "#aaaaaa";
-    html += `<br><span style="color:${civColor}">&#x1F3D9; <b>${city.name}</b></span> &mdash; ${civ ? civ.name : "?"}`;
-    html += `<br>Pop: ${city.population}`;
-
-    const fpt  = city.food_per_turn ?? "?";
-    const fsto = city.food_stored   ?? 0;
-    const fned = city.food_needed   ?? (20 + city.population * 10);
-    html += `<br>&#x1F33E; Food: ${fsto}/${fned} (+${fpt}/turn)`;
-
-    const ppt    = city.production_per_turn ?? "?";
-    const psto   = city.production_stored   ?? 0;
-    const upkeep = city.unit_upkeep         ?? 0;
-    if (city.production_order) {
-      const po  = city.production_order;
-      const pct = po.cost > 0 ? Math.round(po.progress / po.cost * 100) : 100;
-      html += `<br>&#x2699; Prod: ${psto}/${po.cost} (+${ppt}/turn${upkeep > 0 ? `, -${upkeep} upkeep` : ""})`;
-      html += `<br>&#x1F528; ${po.type === "unit" ? "Unit" : "Building"}: ${po.key.replace(/_/g, " ")} (${pct}%)`;
-    } else {
-      html += `<br>&#x2699; Production: +${ppt}/turn${upkeep > 0 ? ` (-${upkeep} upkeep)` : ""} (idle)`;
-    }
-
-    if (city.buildings && city.buildings.length)
-      html += `<br>&#x1F3DB; ${city.buildings.map(b => b.replace(/_/g, " ")).join(", ")}`;
-
-    const maintained = state.units.filter(u => u.home_city_id === city.id);
-    if (maintained.length)
-      html += `<br>&#x2694; Units: ${maintained.map(u => u.name).join(", ")}`;
-  }
 
   if (units.length)
     html += `<br>Units: ${units.map(u => u.name).join(", ")}`;
@@ -1052,10 +1267,41 @@ document.getElementById("btn-new-game").addEventListener("click", () => {
 document.getElementById("btn-stats").addEventListener("click", _toggleStats);
 document.getElementById("btn-close-stats").addEventListener("click", _toggleStats);
 
-document.getElementById("speed-slider").addEventListener("input", (e) => {
-  // Communicate desired interval to server (for future use)
-  // For now, we just note it; the server controls TURN_INTERVAL_SECONDS
+document.getElementById("btn-copy-state").addEventListener("click", () => {
+  if (!state) return;
+  const btn = document.getElementById("btn-copy-state");
+  navigator.clipboard.writeText(JSON.stringify(state, null, 2))
+    .then(() => {
+      btn.textContent = "✔ Copied!";
+      setTimeout(() => { btn.textContent = "📋 Copy state"; }, 1500);
+    })
+    .catch(() => {
+      btn.textContent = "✖ Failed";
+      setTimeout(() => { btn.textContent = "📋 Copy state"; }, 1500);
+    });
 });
+
+document.getElementById("speed-slider").addEventListener("input", (e) => {
+  const speed = parseFloat(e.target.value);   // 0.5 … 5  (higher = faster)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "set_speed", speed }));
+  }
+});
+
+// ── Pause / Resume ────────────────────────────────────────────────
+let _gamePaused = false;
+document.getElementById("btn-pause").addEventListener("click", () => {
+  _gamePaused = !_gamePaused;
+  const btn = document.getElementById("btn-pause");
+  btn.textContent = _gamePaused ? "▶ Resume" : "⏸ Pause";
+  btn.classList.toggle("paused", _gamePaused);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "set_paused", paused: _gamePaused }));
+  }
+});
+
+// Send initial speed to server once the socket opens (handled inside connect())
+
 
 // ── Resize ────────────────────────────────────────────────────────
 window.addEventListener("resize", () => render());

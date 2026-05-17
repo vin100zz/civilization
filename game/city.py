@@ -31,7 +31,15 @@ class City:
         self.production_order: Optional[ProductionOrder] = None
         self.worked_tiles: List[tuple[int, int]] = []  # tiles this city works
         self.food_per_turn: int = 0        # cached after last turn (net)
+        self.food_gross: int = 0           # gross food produced (before consumption)
+        self.food_from_tiles: int = 0      # food from city center + worked tiles
+        self.food_from_buildings: int = 0  # food from building bonuses
+        self.food_consumed_citizens: int = 0
+        self.food_consumed_workers: int = 0
         self.production_per_turn: int = 0  # cached after last turn (net)
+        self.prod_gross: int = 0           # gross production (before upkeep)
+        self.prod_from_tiles: int = 0      # production from city center + worked tiles
+        self.prod_from_buildings: int = 0  # production from building bonuses
         self.unit_upkeep: int = 0          # production drained by maintained units
 
     # ------------------------------------------------------------------
@@ -167,8 +175,16 @@ class City:
             "food_stored": self.food_stored,
             "food_needed": self.food_needed_to_grow(),
             "food_per_turn": self.food_per_turn,
+            "food_gross": self.food_gross,
+            "food_from_tiles": self.food_from_tiles,
+            "food_from_buildings": self.food_from_buildings,
+            "food_consumed_citizens": self.food_consumed_citizens,
+            "food_consumed_workers": self.food_consumed_workers,
             "production_stored": self.production_stored,
             "production_per_turn": self.production_per_turn,
+            "prod_gross": self.prod_gross,
+            "prod_from_tiles": self.prod_from_tiles,
+            "prod_from_buildings": self.prod_from_buildings,
             "unit_upkeep": self.unit_upkeep,
             "buildings": list(self.buildings),
             "worked_tiles": self.worked_tiles,

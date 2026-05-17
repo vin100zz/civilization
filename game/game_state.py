@@ -45,6 +45,11 @@ class GameState:
         self.events: List[GameEvent] = []        # events from last turn
         self.is_over: bool = False
 
+        # Sequential turn tracking: civs play one at a time.
+        # When this list is empty the next advance_turn() starts a new round.
+        self._pending_civs: List[str] = []
+        self.active_civ_name: Optional[str] = None  # civ currently playing
+
         self._init_civs()
 
     # ------------------------------------------------------------------
@@ -92,24 +97,45 @@ class GameState:
     # ------------------------------------------------------------------
 
     def advance_turn(self) -> List[GameEvent]:
+        """Advance the game by one civ's turn.
+
+        Each call lets exactly ONE civilization play.  When the last civ of a
+        round has played, the turn counter is incremented and game-over is
+        checked — completing the full turn.  The caller should broadcast a
+        snapshot after every call so observers can watch each civ move.
+        """
         from ai.bot import BotAI
 
-        self.events = []
-        self.turn += 1
-        self.year = self._compute_year()
+        # --- Start a new round when the queue is empty ---
+        if not self._pending_civs:
+            self.turn += 1
+            self.year = self._compute_year()
+            self.events = []
 
-        # Allocate tiles exclusively before any city processing
-        self._allocate_worked_tiles()
+            # Allocate tiles once at the start of each round
+            self._allocate_worked_tiles()
 
-        for civ in list(self.civs.values()):
-            if not civ.is_alive:
-                continue
+            # Build the ordered queue of living civs for this round
+            self._pending_civs = [
+                civ.id for civ in self.civs.values() if civ.is_alive
+            ]
+
+        # --- Play the next civ in the queue ---
+        civ_id = self._pending_civs.pop(0)
+        civ = self.civs.get(civ_id)
+        self.active_civ_name = civ.name if civ else None
+
+        if civ and civ.is_alive:
             bot = BotAI(civ, self)
             new_units = bot.play_turn()
             for u in new_units:
                 self._unit_index[u.id] = u
 
-        self._check_game_over()
+        # --- Finalise the round when every civ has played ---
+        if not self._pending_civs:
+            self.active_civ_name = None
+            self._check_game_over()
+
         return self.events
 
     # ------------------------------------------------------------------
@@ -190,12 +216,31 @@ class GameState:
         unit_upkeep = sum(
             1 for u in self._unit_index.values() if u.home_city_id == city.id
         )
+        # Workers consume 1 food per turn from their home city
+        worker_food = sum(
+            1 for u in self._unit_index.values()
+            if u.home_city_id == city.id and u.unit_def_key == "worker"
+        )
+        # Breakdown: tile-only contribution (city center = 1 + worked tiles).
+        # Building bonus is derived as the remainder so the parts always sum
+        # exactly to food_gross / prod_gross (no float/int rounding mismatch).
+        food_tiles = 1 + sum(self.tiles[ty][tx].yields()[0] for tx, ty in city.worked_tiles)
+        prod_tiles = 1 + sum(self.tiles[ty][tx].yields()[1] for tx, ty in city.worked_tiles)
+
         city.unit_upkeep = unit_upkeep
-        city.food_per_turn = food - city.population * 2  # net: gross minus 2 per pop
+        city.food_gross = food
+        city.food_from_tiles = food_tiles
+        city.food_from_buildings = food - food_tiles   # derived: always = food_gross - tiles
+        city.food_consumed_citizens = city.population * 2
+        city.food_consumed_workers = worker_food
+        city.prod_gross = prod
+        city.prod_from_tiles = prod_tiles
+        city.prod_from_buildings = prod - prod_tiles   # derived: always = prod_gross - tiles
+        city.food_per_turn = food - city.population * 2 - worker_food
         city.production_per_turn = max(0, prod - unit_upkeep)
 
         # Food
-        city.food_stored += food - city.population * 2  # 2 food consumed per pop
+        city.food_stored += food - city.population * 2 - worker_food
         if city.food_stored >= city.food_needed_to_grow():
             city.population += 1
             city.food_stored = 0
@@ -499,6 +544,7 @@ class GameState:
             "game_id": self.game_id,
             "turn": self.turn,
             "year": self.year_string(),
+            "active_civ": self.active_civ_name,
             "map_width": MAP_WIDTH,
             "map_height": MAP_HEIGHT,
             "terrain": terrain_grid,

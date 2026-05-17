@@ -102,18 +102,43 @@ class BotAI:
         num_settlers = sum(1 for u in self.civ.units.values() if u.unit_def_key == "settler")
         num_workers  = sum(1 for u in self.civ.units.values() if u.unit_def_key == "worker")
 
-        coastal = city.is_coastal(self.state.tiles)
-        best_military = self._best_military_unit(buildable_units, naval=coastal)
+        # Count military units by role
+        num_defenders = sum(
+            1 for u in self.civ.units.values()
+            if not u.has_ability(UnitAbility.FOUND_CITY)
+            and not u.has_ability(UnitAbility.IMPROVE_TERRAIN)
+            and self._is_defender_unit(u)
+        )
+        num_attackers = sum(
+            1 for u in self.civ.units.values()
+            if not u.has_ability(UnitAbility.FOUND_CITY)
+            and not u.has_ability(UnitAbility.IMPROVE_TERRAIN)
+            and not self._is_defender_unit(u)
+        )
 
-        # Priority 0: city has no garrison — build a defender immediately
+        coastal = city.is_coastal(self.state.tiles)
+        best_defender = self._best_defender_unit(buildable_units, naval=coastal)
+        best_attacker = self._best_military_unit(buildable_units, naval=coastal)
+
+        # Aim for at least 2 defender-typed units per city; fill attackers after that.
+        # Cap attackers at 4 per city to prevent runaway accumulation when terrain
+        # blocks their path to enemy cities.
+        need_defender = num_defenders < num_cities * 2
+        attacker_cap_reached = num_attackers >= num_cities * 4
+        best_military = (best_defender if (need_defender and best_defender)
+                         else (best_attacker or best_defender))
+
+        # Priority 0: city has no garrison — always build a defender first
         city_defended = any(
             u.x == city.x and u.y == city.y
             and not u.has_ability(UnitAbility.FOUND_CITY)
             and not u.has_ability(UnitAbility.IMPROVE_TERRAIN)
             for u in self.civ.units.values()
         )
-        if not city_defended and best_military:
-            return ProductionOrder("unit", best_military)
+        if not city_defended:
+            unit_to_build = best_defender or best_attacker
+            if unit_to_build:
+                return ProductionOrder("unit", unit_to_build)
 
         # Priority 1: granary
         if "granary" in buildable_buildings and "granary" not in city.buildings:
@@ -133,8 +158,10 @@ class BotAI:
         if num_workers < num_cities and "worker" in buildable_units:
             return ProductionOrder("unit", "worker")
 
-        # Priority 5: military
-        if best_military and (num_units < num_cities * 3 or rng.random() < 0.6):
+        # Priority 5: military — mix defenders and attackers based on army composition
+        # Don't build more attackers if we're already over the cap (they would
+        # just pile up if terrain blocks their path).
+        if best_military and not attacker_cap_reached and (num_units < num_cities * 3 or rng.random() < 0.6):
             return ProductionOrder("unit", best_military)
 
         # Priority 6: buildings
@@ -146,7 +173,7 @@ class BotAI:
         return ProductionOrder("unit", "warrior")
 
     def _best_military_unit(self, buildable: List[str], naval: bool = False) -> Optional[str]:
-        """Choose the strongest affordable military unit.
+        """Choose the strongest attacker-typed military unit (highest attack+defense).
         If *naval* is True, prefer naval units; otherwise prefer land units."""
         candidates = [
             k for k in buildable
@@ -162,6 +189,28 @@ class BotAI:
         if not candidates:
             return None
         return max(candidates, key=lambda k: UNIT_DEFS[k].attack + UNIT_DEFS[k].defense)
+
+    def _best_defender_unit(self, buildable: List[str], naval: bool = False) -> Optional[str]:
+        """Choose the best defender-typed unit (defense ≥ attack, ranked by defense).
+        Falls back to any military unit if no pure defenders are buildable."""
+        candidates = [
+            k for k in buildable
+            if not UNIT_DEFS[k].abilities
+            and UNIT_DEFS[k].is_naval == naval
+            and UNIT_DEFS[k].defense >= UNIT_DEFS[k].attack
+        ]
+        if not candidates:
+            # Fall back: any land/naval military unit ranked by defense
+            candidates = [
+                k for k in buildable
+                if not UNIT_DEFS[k].abilities
+                and UNIT_DEFS[k].is_naval == naval
+            ]
+        if not candidates:
+            candidates = [k for k in buildable if not UNIT_DEFS[k].abilities]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda k: UNIT_DEFS[k].defense)
 
     # ------------------------------------------------------------------
     # Unit actions
@@ -181,13 +230,13 @@ class BotAI:
             return "settle"
         if unit.has_ability(UnitAbility.IMPROVE_TERRAIN):
             return "improve"
-        if unit.id in self._garrison_map:
-            return "garrison"
         # Land unit currently at sea: keep moving, don't fight
         if not unit.unit_def.is_naval:
             from game.terrain import TERRAIN_DEFS
             if TERRAIN_DEFS[self.state.tiles[unit.y][unit.x].terrain].is_water:
                 return "transit"
+        if unit.id in self._garrison_map:
+            return "garrison"
         return "attack"
 
     def _execute_unit_action(self, unit: Unit, action: str) -> bool:
@@ -206,13 +255,37 @@ class BotAI:
             return self._act_explorer(unit)
 
     def _act_garrison(self, unit: Unit) -> bool:
-        """Move toward assigned city and hold position there."""
+        """Hold position in/near assigned city; counter-attack adjacent enemies."""
         city = self._garrison_map.get(unit.id)
         if city is None:
-            return self._act_attacker(unit)
-        if unit.x == city.x and unit.y == city.y:
             unit.moves_left = 0
-            return False          # already in position
+            return False
+
+        # Counter-attack any adjacent enemy before doing anything else
+        from game.terrain import TERRAIN_DEFS
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            nx = (unit.x + dx) % MAP_WIDTH
+            ny = unit.y + dy
+            if not (0 <= ny < MAP_HEIGHT):
+                continue
+            occupant = self.state._unit_at(nx, ny)
+            if occupant and occupant.civ_id != unit.civ_id:
+                won = self.state.attack(unit, nx, ny)
+                unit.moves_left = 0
+                if won and unit.id in self.civ.units:
+                    if self.state.tile_is_passable_for(nx, ny, unit):
+                        unit.x = nx
+                        unit.y = ny
+                    self.state.check_city_capture(unit)
+                return True
+
+        # Hold if already at or adjacent to the assigned city
+        dist = abs(unit.x - city.x) + abs(unit.y - city.y)
+        if dist <= 1:
+            unit.moves_left = 0
+            return False
+
+        # Otherwise move toward the city
         return self._step_toward(unit, city.x, city.y)
 
     def _act_settler(self, unit: Unit) -> bool:
@@ -230,16 +303,96 @@ class BotAI:
         return self._random_step(unit)
 
     def _act_worker(self, unit: Unit) -> bool:
-        tile = self.state.tiles[unit.y][unit.x]
         from game.terrain import TerrainType
-        # Build road if none
-        if not tile.has_road and tile.terrain not in (
-            TerrainType.OCEAN, TerrainType.COAST, TerrainType.MOUNTAINS
-        ):
-            tile.has_road = True
-            unit.moves_left = 0
-            return True
-        return self._random_step(unit)
+        NO_ROAD   = (TerrainType.OCEAN, TerrainType.COAST, TerrainType.MOUNTAINS)
+        IRRIGABLE = (TerrainType.GRASSLAND, TerrainType.PLAINS)
+        MINEABLE  = (TerrainType.HILLS, TerrainType.MOUNTAINS)
+        TURNS     = {"road": 3, "irrigation": 4, "mine": 4}
+
+        if self._is_in_civ_territory(unit.x, unit.y):
+            tile = self.state.tiles[unit.y][unit.x]
+
+            # Decide what to build on this tile (road first, then terrain improvement)
+            task: Optional[str] = None
+            if tile.terrain not in NO_ROAD and not tile.has_road:
+                task = "road"
+            elif tile.terrain in IRRIGABLE and not tile.has_irrigation:
+                task = "irrigation"
+            elif tile.terrain in MINEABLE and not tile.has_mine:
+                task = "mine"
+
+            if task:
+                # Continue progress if still on the same tile with the same task
+                if (unit.improve_x == unit.x and unit.improve_y == unit.y
+                        and unit.improve_type == task):
+                    unit.improve_progress += 1
+                else:
+                    unit.improve_progress = 1
+                    unit.improve_x = unit.x
+                    unit.improve_y = unit.y
+                    unit.improve_type = task
+
+                if unit.improve_progress >= TURNS[task]:
+                    if task == "road":
+                        tile.has_road = True
+                    elif task == "irrigation":
+                        tile.has_irrigation = True
+                    elif task == "mine":
+                        tile.has_mine = True
+                    unit.improve_progress = 0
+                    unit.improve_x = None
+                    unit.improve_y = None
+                    unit.improve_type = None
+
+                unit.moves_left = 0
+                return True
+
+        # Move toward the nearest tile that still needs work
+        target = self._find_worker_task(unit)
+        if target:
+            # Reset progress when leaving the current tile
+            if (unit.improve_x, unit.improve_y) != (unit.x, unit.y):
+                unit.improve_progress = 0
+                unit.improve_x = None
+                unit.improve_y = None
+                unit.improve_type = None
+            return self._step_toward(unit, target[0], target[1])
+
+        # Nothing left to do: stay put
+        unit.moves_left = 0
+        return False
+
+    def _find_worker_task(self, unit: Unit) -> Optional[Tuple[int, int]]:
+        """Nearest tile inside civ territory that still needs a road, irrigation, or mine."""
+        from game.terrain import TerrainType
+        NO_ROAD   = (TerrainType.OCEAN, TerrainType.COAST, TerrainType.MOUNTAINS)
+        IRRIGABLE = (TerrainType.GRASSLAND, TerrainType.PLAINS)
+        MINEABLE  = (TerrainType.HILLS, TerrainType.MOUNTAINS)
+
+        best_pos: Optional[Tuple[int, int]] = None
+        best_dist = float("inf")
+
+        for city in self.civ.cities.values():
+            for dy in range(-2, 3):
+                for dx in range(-2, 3):
+                    tx = (city.x + dx) % MAP_WIDTH
+                    ty = city.y + dy
+                    if not (0 <= ty < MAP_HEIGHT):
+                        continue
+                    tile = self.state.tiles[ty][tx]
+                    needs_work = (
+                        (tile.terrain not in NO_ROAD and not tile.has_road)
+                        or (tile.terrain in IRRIGABLE and not tile.has_irrigation)
+                        or (tile.terrain in MINEABLE  and not tile.has_mine)
+                    )
+                    if not needs_work:
+                        continue
+                    d = abs(tx - unit.x) + abs(ty - unit.y)
+                    if d < best_dist:
+                        best_dist = d
+                        best_pos = (tx, ty)
+
+        return best_pos
 
     def _act_transit(self, unit: Unit) -> bool:
         """Land unit crossing water: head toward nearest passable land tile."""
@@ -313,38 +466,71 @@ class BotAI:
                     if def_td.is_water:
                         return self._step_toward(unit, u.x, u.y)
 
-        # 4. March toward nearest target (enemy city first, then any unit)
-        target = self._find_attack_target(unit)
-        if target:
-            return self._step_toward(unit, target[0], target[1])
+        # 4. March toward the nearest *reachable* target.
+        # Try all targets by ascending Manhattan distance so that an impassable
+        # nearest city (blocked by mountains / ocean) does not freeze the unit.
+        tried = 0
+        for target in self._find_all_attack_targets(unit):
+            tried += 1
+            if self._step_toward(unit, target[0], target[1]):
+                return True
 
-        return self._random_step(unit)
+        # No target reachable: hold position rather than wandering
+        if tried > 0:
+            print(
+                f"[AI DEBUG] {self.civ.name} {unit.unit_def.name} at "
+                f"({unit.x},{unit.y}) has no reachable target after trying "
+                f"{tried} candidate(s) — unit stays idle."
+            )
+        unit.moves_left = 0
+        return False
 
     def _find_attack_target(self, unit: Unit) -> Optional[Tuple[int, int]]:
-        """Nearest enemy city (preferred) or nearest enemy unit."""
-        best_pos: Optional[Tuple[int, int]] = None
-        best_dist = float("inf")
+        """Nearest enemy city (preferred) or nearest enemy unit.
+        Returns the single closest target (Manhattan distance). Kept for
+        backward-compat; prefer _find_all_attack_targets for movement."""
+        targets = self._find_all_attack_targets(unit)
+        return targets[0] if targets else None
 
-        # Enemy cities are the primary target
+    def _find_all_attack_targets(self, unit: Unit) -> List[Tuple[int, int]]:
+        """All enemy cities, then enemy units, sorted by ascending Manhattan
+        distance.  Cities are listed before units of equal distance so that
+        city-capture is preferred over chasing lone units."""
+        city_targets: List[Tuple[int, Tuple[int, int]]] = []
+        unit_targets: List[Tuple[int, Tuple[int, int]]] = []
+
         for civ in self.state.civs.values():
             if civ.id == self.civ.id:
                 continue
             for city in civ.cities.values():
                 d = abs(city.x - unit.x) + abs(city.y - unit.y)
-                if d < best_dist:
-                    best_dist = d
-                    best_pos = (city.x, city.y)
+                city_targets.append((d, (city.x, city.y)))
 
-        # Enemy units — only preferred if closer than the nearest city
         for u in self.state._unit_index.values():
             if u.civ_id == self.civ.id:
                 continue
             d = abs(u.x - unit.x) + abs(u.y - unit.y)
-            if d < best_dist:
-                best_dist = d
-                best_pos = (u.x, u.y)
+            unit_targets.append((d, (u.x, u.y)))
 
-        return best_pos
+        city_targets.sort(key=lambda x: x[0])
+        unit_targets.sort(key=lambda x: x[0])
+
+        # Interleave: cities first within the same distance bucket
+        merged: List[Tuple[int, int]] = []
+        ci, ui = 0, 0
+        while ci < len(city_targets) and ui < len(unit_targets):
+            if city_targets[ci][0] <= unit_targets[ui][0]:
+                merged.append(city_targets[ci][1])
+                ci += 1
+            else:
+                merged.append(unit_targets[ui][1])
+                ui += 1
+        for d, pos in city_targets[ci:]:
+            merged.append(pos)
+        for d, pos in unit_targets[ui:]:
+            merged.append(pos)
+
+        return merged
 
     def _act_explorer(self, unit: Unit) -> bool:
         # Move toward least recently explored areas or just wander
@@ -356,19 +542,42 @@ class BotAI:
         return self._step_toward(unit, unit._goal[0], unit._goal[1])
 
     # ------------------------------------------------------------------
+    # Role helpers
+    # ------------------------------------------------------------------
+
+    def _is_defender_unit(self, unit: Unit) -> bool:
+        """Units whose defense stat ≥ attack stat play a defensive role."""
+        return unit.unit_def.defense >= unit.unit_def.attack
+
+    def _is_in_civ_territory(self, x: int, y: int) -> bool:
+        """True if (x, y) is within Chebyshev radius 2 of any of this civ's cities."""
+        for city in self.civ.cities.values():
+            if max(abs(x - city.x), abs(y - city.y)) <= 2:
+                return True
+        return False
+
+    # ------------------------------------------------------------------
     # Garrison assignment
     # ------------------------------------------------------------------
 
     def _compute_garrison_assignments(self) -> dict:
         """
-        Assign exactly one military unit per city as garrison defender.
+        Assign up to SLOTS_PER_CITY defender-typed units per city.
         Returns unit_id → City.
 
-        Pass 1 — units already sitting on a city tile claim that city.
-        Pass 2 — remaining undefended cities get the closest free unit.
+        Defender-typed = defense ≥ attack.  Attacker-typed units are never
+        garrisoned so they stay free to march on enemy cities.
+
+        Pass 1 — defender units already at/adjacent (dist ≤ 1) to a city
+                  claim that city's slot first.
+        Pass 2 — each undefended city (0 slots) gets the closest free
+                  defender; if none exist, fall back to any military unit.
+        Pass 3 — fill second garrison slot with the highest-defense free
+                  defender available.
         """
+        SLOTS_PER_CITY = 2
         unit_to_city: dict = {}
-        defended_cities: set = set()
+        city_fill: dict = {city.id: 0 for city in self.civ.cities.values()}
 
         def is_military(u: Unit) -> bool:
             return (
@@ -376,30 +585,43 @@ class BotAI:
                 and not u.has_ability(UnitAbility.IMPROVE_TERRAIN)
             )
 
-        # Pass 1: units already in a city
-        for city in self.civ.cities.values():
-            for u in self.civ.units.values():
-                if (u.x == city.x and u.y == city.y
-                        and is_military(u)
-                        and u.id not in unit_to_city):
-                    unit_to_city[u.id] = city
-                    defended_cities.add(city.id)
-                    break
+        defenders = [u for u in self.civ.units.values()
+                     if is_military(u) and self._is_defender_unit(u)]
+        all_military = [u for u in self.civ.units.values() if is_military(u)]
 
-        # Pass 2: undefended cities — find closest free military unit
+        # Pass 1: units already at or adjacent to a city claim its garrison
         for city in self.civ.cities.values():
-            if city.id in defended_cities:
-                continue
-            best_unit, best_dist = None, float("inf")
-            for u in self.civ.units.values():
-                if u.id in unit_to_city or not is_military(u):
+            for u in sorted(defenders, key=lambda u: u.unit_def.defense, reverse=True):
+                if u.id in unit_to_city:
                     continue
-                d = abs(u.x - city.x) + abs(u.y - city.y)
-                if d < best_dist:
-                    best_dist, best_unit = d, u
-            if best_unit:
-                unit_to_city[best_unit.id] = city
-                defended_cities.add(city.id)
+                if city_fill[city.id] >= SLOTS_PER_CITY:
+                    break
+                if abs(u.x - city.x) + abs(u.y - city.y) <= 1:
+                    unit_to_city[u.id] = city
+                    city_fill[city.id] += 1
+
+        # Pass 2: every city must have at least 1 garrison unit (defenders only)
+        # Attackers are intentionally left free to march on enemy cities.
+        for city in self.civ.cities.values():
+            if city_fill[city.id] > 0:
+                continue
+            pool = [u for u in defenders if u.id not in unit_to_city]
+            if not pool:
+                continue  # no defender available; leave city ungarrisoned
+            best = min(pool, key=lambda u: abs(u.x - city.x) + abs(u.y - city.y))
+            unit_to_city[best.id] = city
+            city_fill[city.id] += 1
+
+        # Pass 3: fill second slot with the highest-defense available defender
+        for city in self.civ.cities.values():
+            if city_fill[city.id] >= SLOTS_PER_CITY:
+                continue
+            free = [u for u in defenders if u.id not in unit_to_city]
+            if not free:
+                break
+            best = max(free, key=lambda u: u.unit_def.defense)
+            unit_to_city[best.id] = city
+            city_fill[city.id] += 1
 
         return unit_to_city
 
@@ -408,12 +630,13 @@ class BotAI:
     # ------------------------------------------------------------------
 
     def _step_toward(self, unit: Unit, tx: int, ty: int) -> bool:
-        """BFS to find next step toward (tx, ty). Returns True if moved."""
+        """BFS to find next step toward (tx, ty). Returns True if moved.
+        Returns False (without wandering) if no path exists."""
         path = self._bfs(unit.x, unit.y, tx, ty, unit)
         if path and len(path) > 1:
             nx, ny = path[1]
             return self._try_move(unit, nx, ny)
-        return self._random_step(unit)
+        return False
 
     def _random_step(self, unit: Unit) -> bool:
         directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]

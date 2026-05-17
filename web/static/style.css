@@ -101,8 +101,7 @@ html, body {
 }
 
 #civ-list {
-  overflow-y: auto;
-  max-height: 130px;
+  flex-shrink: 0;
   padding: 2px 0;
 }
 
@@ -167,6 +166,7 @@ html, body {
   transition: background 0.15s;
 }
 #controls button:hover { background: #3a4a5a; }
+#btn-pause.paused { background: #3a2a1a; border-color: #cc8844; color: #ffbb66; }
 
 .speed-label {
   color: #888;
@@ -223,6 +223,47 @@ html, body {
   border-radius: 2px;
   white-space: normal;
   max-width: 240px;
+}
+#tooltip.tt-city-mode {
+  max-width: 300px;
+  padding: 6px 10px;
+}
+.tt-city-name { font-size: 12px; font-weight: bold; margin-bottom: 1px; }
+.tt-city-sub  { font-size: 10px; color: #888; margin-bottom: 5px; }
+.tt-section   { margin-top: 6px; }
+.tt-section-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+  color: #778; border-bottom: 1px solid #2a2a3a;
+  margin-bottom: 3px; padding-bottom: 2px;
+}
+.tt-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; font-size: 11px; line-height: 1.5;
+}
+.tt-row.tt-sub { padding-left: 8px; font-size: 10px; color: #998; line-height: 1.4; }
+.tt-row.tt-net { font-weight: bold; margin-top: 1px; border-top: 1px solid #2a2a3a; padding-top: 1px; }
+.tt-bar-label { font-size: 10px; color: #778; margin-top: 3px; }
+.tt-bar {
+  height: 5px; background: #222233; border-radius: 3px;
+  margin-top: 2px; margin-bottom: 1px; overflow: hidden;
+}
+.tt-bar-fill  { height: 100%; border-radius: 3px; transition: width 0.2s; }
+.tt-bar-food  .tt-bar-fill { background: #44aa55; }
+.tt-bar-prod  .tt-bar-fill { background: #cc8822; }
+.tt-units { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+.tt-unit-entry {
+  display: flex; align-items: center; gap: 3px;
+  font-size: 10px; color: #b0a888;
+}
+.tt-unit-icon {
+  width: 18px; height: 18px; object-fit: contain;
+  background: #2a2a3a; border-radius: 2px; border: 1px solid #3a3a50;
+}
+.tt-idle { font-size: 10px; color: #555; font-style: italic; margin-top: 2px; }
+.tt-building-list { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; }
+.tt-building-entry {
+  font-size: 10px; color: #a0988a;
+  text-transform: capitalize;
 }
 
 /* ── Timeline bar ─────────────────────────────────────────────── */

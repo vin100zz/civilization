@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, Set
@@ -30,7 +31,14 @@ MAX_SNAPSHOTS = 500   # how many past turns to keep in memory
 # ---------------------------------------------------------------------------
 # Shared game state
 # ---------------------------------------------------------------------------
-_game: GameState = GameState(seed=42)
+_game: GameState = GameState(seed=random.randint(0, 999_999))
+
+# Seconds between civ moves.  Controlled by the client speed slider.
+# Default = 1/20 s (speed=20, the slider maximum).
+_turn_interval: float = 0.05
+
+# When True the game loop skips advancing the simulation.
+_paused: bool = False
 
 # Turn number → serialised state dict  (sliding window of last MAX_SNAPSHOTS turns)
 _snapshots: Dict[int, dict] = {0: _game.to_dict()}
@@ -51,24 +59,29 @@ def _store_snapshot(snap: dict) -> None:
 # ---------------------------------------------------------------------------
 
 async def _game_loop() -> None:
-    log.info("Game loop started (interval=%.1fs)", TURN_INTERVAL_SECONDS)
+    log.info("Game loop started (default interval=%.2fs)", _turn_interval)
     while True:
-        await asyncio.sleep(TURN_INTERVAL_SECONDS)
+        await asyncio.sleep(_turn_interval)
 
         # Advance the simulation — catch errors without losing snapshot storage
         try:
-            if not _game.is_over:
+            if not _game.is_over and not _paused:
                 _game.advance_turn()
-                log.debug("Turn %d (%s)", _game.turn, _game.year_string())
+                if _game.active_civ_name:
+                    log.debug("Turn %d · %s playing", _game.turn, _game.active_civ_name)
+                else:
+                    log.debug("Turn %d complete (%s)", _game.turn, _game.year_string())
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("Unhandled error in advance_turn — storing current state anyway")
 
-        # Always snapshot + broadcast, even after a partial failure
+        # Always broadcast; only persist to history at end of full turn
         try:
             snapshot = _game.to_dict()
-            _store_snapshot(snapshot)
+            # Store in history only when all civs have played (turn complete)
+            if snapshot.get("active_civ") is None:
+                _store_snapshot(snapshot)
             if _queues:
                 _enqueue_all(snapshot)
         except asyncio.CancelledError:
@@ -124,9 +137,9 @@ async def index():
 
 
 @app.get("/new-game")
-async def new_game(seed: int = 42):
+async def new_game(seed: int = -1):
     global _game
-    _game = GameState(seed=seed)
+    _game = GameState(seed=seed if seed >= 0 else random.randint(0, 999_999))
     _snapshots.clear()
     snap = _game.to_dict()
     _store_snapshot(snap)
@@ -156,8 +169,8 @@ async def get_techs():
 
 @app.get("/api/unit-sprites")
 async def unit_sprites():
-    """Return the list of unit-type keys that have a sprite in resources/units/."""
-    units_dir = RESOURCES_DIR / "units"
+    """Return the list of unit-type keys that have a sprite in resources/unit/."""
+    units_dir = RESOURCES_DIR / "unit"
     keys = [p.stem for p in sorted(units_dir.glob("*.png"))]
     return {"sprites": keys}
 
@@ -216,9 +229,17 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 async def _handle_command(ws: WebSocket, q: asyncio.Queue, cmd: dict) -> None:
-    global _game
+    global _game, _turn_interval, _paused
     action = cmd.get("action")
-    if action == "new_game":
+    if action == "set_speed":
+        speed = float(cmd.get("speed", 1.0))
+        speed = max(0.1, min(speed, 20.0))   # clamp to sane range
+        _turn_interval = 1.0 / speed
+        log.info("Speed set to %.1f → interval=%.3fs", speed, _turn_interval)
+    elif action == "set_paused":
+        _paused = bool(cmd.get("paused", False))
+        log.info("Game %s", "paused" if _paused else "resumed")
+    elif action == "new_game":
         seed = int(cmd.get("seed", 42))
         _game = GameState(seed=seed)
         _snapshots.clear()

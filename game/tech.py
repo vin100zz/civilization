@@ -43,6 +43,8 @@ _TECH_LIST: List[TechDef] = [
     TechDef("combustion",        "Combustion",        120,["electricity"],                 "Enables Tank",                         "modern"),
     TechDef("radio",             "Radio",             120,["electricity", "democracy"],   "Enables Infantry",                     "modern"),
     TechDef("flight",            "Flight",            140,["combustion", "radio"],        "Enables advanced modern warfare",      "modern"),
+    TechDef("conscription",      "Conscription",      160,["flight"],                       "Enables advanced modern warfare",      "modern"),
+    TechDef("artillery",         "Artillery",         200,["conscription"],                       "Enables advanced modern warfare",      "modern"),
 ]
 # fmt: on
 

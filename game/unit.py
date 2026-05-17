@@ -28,24 +28,23 @@ _UNIT_LIST = [
     UnitDef("settler",   "Settler",   40, 0, 1, 1, [], [UnitAbility.FOUND_CITY]),
     UnitDef("worker",    "Worker",    20, 0, 1, 1, [], [UnitAbility.IMPROVE_TERRAIN]),
     UnitDef("warrior",   "Warrior",   10, 1, 1, 1, []),
-    UnitDef("archer",    "Archer",    20, 2, 1, 1, ["bronze_working"]),
-    UnitDef("chariot",   "Chariot",   30, 3, 1, 2, ["wheel", "horseback_riding"]),
+    UnitDef("phalanx",   "Phalanx",   20, 1, 2, 1, ["bronze_working"]),
+    UnitDef("chariot",   "Chariot",   30, 4, 1, 2, ["wheel", "horseback_riding"]),
     UnitDef("horseman",  "Horseman",  30, 2, 1, 2, ["horseback_riding"]),
-    UnitDef("legion",    "Legion",    40, 3, 3, 1, ["iron_working"]),
-    UnitDef("swordsman", "Swordsman", 30, 3, 2, 1, ["iron_working"]),
+    UnitDef("legion",    "Legion",    40, 3, 1, 1, ["iron_working"]),
     UnitDef("catapult",  "Catapult",  40, 6, 1, 1, ["mathematics"]),
     UnitDef("knight",    "Knight",    60, 5, 2, 2, ["feudalism", "horseback_riding"]),
-    UnitDef("crusader",  "Crusader",  50, 5, 2, 1, ["monotheism"]),
-    UnitDef("musketeer", "Musketeer", 60, 5, 4, 1, ["gunpowder"]),
+    UnitDef("musketeer", "Musketeer", 60, 1, 3, 1, ["gunpowder"]),
     UnitDef("cannon",    "Cannon",    80, 8, 1, 1, ["gunpowder"]),
     UnitDef("trireme",   "Trireme",   40, 1, 1, 3, ["map_making"], is_naval=True),
     UnitDef("caravel",   "Caravel",   60, 2, 1, 3, ["navigation"], is_naval=True),
-    UnitDef("arquebusier", "Arquebusier", 70, 6, 3, 1, ["printing_press"]),
     UnitDef("frigate",     "Frigate",     80, 4, 2, 4, ["navigation", "printing_press"], is_naval=True),
-    UnitDef("rifleman",    "Rifleman",    90, 7, 6, 1, ["industrialization"]),
-    UnitDef("ironclad",    "Ironclad",    100, 6, 5, 4, ["steam_engine", "industrialization"], is_naval=True),
-    UnitDef("tank",        "Tank",        120, 10, 6, 3, ["combustion"]),
-    UnitDef("infantry",    "Infantry",    110, 8, 8, 1, ["radio"]),
+    UnitDef("rifleman",    "Rifleman",    90, 3, 5, 1, ["industrialization"]),
+    UnitDef("ironclad",    "Ironclad",    100, 4, 4, 4, ["steam_engine", "industrialization"], is_naval=True),
+    UnitDef("tank",        "Tank",        120, 8, 3, 3, ["combustion"]),
+    UnitDef("infantry",    "Infantry",    110, 3, 6, 1, ["radio"]),
+    UnitDef("mechinf",    "Mech. Infantry",    110, 4, 8, 2, ["conscription"]),
+    UnitDef("artillery",    "Artillery",    110, 12, 2, 1, ["artillery"]),
 ]
 
 UNIT_DEFS: Dict[str, UnitDef] = {u.key: u for u in _UNIT_LIST}
@@ -82,6 +81,12 @@ class Unit:
         self.fortified: bool = False
         self._goal: Optional[tuple] = None  # target (x, y) for pathfinding
         self.home_city_id: Optional[str] = None  # city that produced this unit
+
+        # Worker improvement progress (resets if the unit moves or switches task)
+        self.improve_progress: int = 0           # turns spent on current task
+        self.improve_x: Optional[int] = None     # tile being improved
+        self.improve_y: Optional[int] = None
+        self.improve_type: Optional[str] = None  # "road" | "irrigation" | "mine"
 
     @property
     def unit_def(self) -> UnitDef:
