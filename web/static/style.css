@@ -81,16 +81,16 @@ html, body {
 }
 
 .status-row .lbl {
-  color: #888;
+  color: #a0a8b8;
 }
 
 .status-row span:last-child {
-  color: #d0c8a0;
+  color: #e8e0b8;
   text-align: right;
 }
 
 /* Civ list */
-#civ-list-header, #log-header {
+#civ-list-header {
   background: #2a2a3a;
   color: #a0a0c0;
   font-size: 10px;
@@ -123,26 +123,7 @@ html, body {
 }
 
 .civ-row-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.civ-row-cities { color: #888; font-size: 10px; }
-
-/* Event log */
-#event-log {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 6px;
-  font-size: 10px;
-  line-height: 1.5;
-  background: #10101a;
-  min-height: 60px;
-}
-
-.event-entry {
-  padding: 1px 0;
-  border-bottom: 1px solid #1e1e2e;
-  color: #b0b8a8;
-}
-
-.event-entry .ev-civ { font-weight: bold; }
+.civ-row-cities { color: #a0a8b8; font-size: 10px; }
 
 /* Controls */
 #controls {
@@ -169,7 +150,7 @@ html, body {
 #btn-pause.paused { background: #3a2a1a; border-color: #cc8844; color: #ffbb66; }
 
 .speed-label {
-  color: #888;
+  color: #a0a8b8;
   font-size: 10px;
   display: flex;
   align-items: center;
@@ -185,7 +166,7 @@ html, body {
 #sidebar-footer {
   padding: 5px 8px;
   font-size: 10px;
-  color: #555;
+  color: #8888aa;
   border-top: 1px solid #2a2a3a;
   text-align: center;
   letter-spacing: 1px;
@@ -212,9 +193,9 @@ html, body {
 /* Tooltip */
 #tooltip {
   position: absolute;
-  background: #1a1a2a;
-  border: 1px solid #4a4a6a;
-  color: #d0c8a0;
+  background: #12121e;
+  border: 1px solid #5a5a80;
+  color: #e0d8b8;
   font-size: 11px;
   padding: 4px 8px;
   pointer-events: none;
@@ -229,20 +210,20 @@ html, body {
   padding: 6px 10px;
 }
 .tt-city-name { font-size: 12px; font-weight: bold; margin-bottom: 1px; }
-.tt-city-sub  { font-size: 10px; color: #888; margin-bottom: 5px; }
-.tt-section   { margin-top: 6px; }
+.tt-city-sub  { font-size: 10px; color: #a0a8b8; margin-bottom: 5px; }
+.tt-section   { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a2a40; }
 .tt-section-title {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
-  color: #778; border-bottom: 1px solid #2a2a3a;
+  color: #aabbdd; border-bottom: 1px solid #3a3a52;
   margin-bottom: 3px; padding-bottom: 2px;
 }
 .tt-row {
   display: flex; justify-content: space-between; align-items: baseline;
   gap: 12px; font-size: 11px; line-height: 1.5;
 }
-.tt-row.tt-sub { padding-left: 8px; font-size: 10px; color: #998; line-height: 1.4; }
-.tt-row.tt-net { font-weight: bold; margin-top: 1px; border-top: 1px solid #2a2a3a; padding-top: 1px; }
-.tt-bar-label { font-size: 10px; color: #778; margin-top: 3px; }
+.tt-row.tt-sub { padding-left: 8px; font-size: 10px; color: #c0b898; line-height: 1.4; }
+.tt-row.tt-net { font-weight: bold; margin-top: 1px; border-top: 1px solid #3a3a52; padding-top: 1px; }
+.tt-bar-label { font-size: 10px; color: #a0a8b8; margin-top: 3px; }
 .tt-bar {
   height: 5px; background: #222233; border-radius: 3px;
   margin-top: 2px; margin-bottom: 1px; overflow: hidden;
@@ -253,16 +234,16 @@ html, body {
 .tt-units { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
 .tt-unit-entry {
   display: flex; align-items: center; gap: 3px;
-  font-size: 10px; color: #b0a888;
+  font-size: 10px; color: #d0c8a8;
 }
 .tt-unit-icon {
   width: 18px; height: 18px; object-fit: contain;
-  background: #2a2a3a; border-radius: 2px; border: 1px solid #3a3a50;
+  border-radius: 2px;
 }
-.tt-idle { font-size: 10px; color: #555; font-style: italic; margin-top: 2px; }
+.tt-idle { font-size: 10px; color: #8888aa; font-style: italic; margin-top: 2px; }
 .tt-building-list { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; }
 .tt-building-entry {
-  font-size: 10px; color: #a0988a;
+  font-size: 10px; color: #c8c0a8;
   text-transform: capitalize;
 }
 
@@ -342,7 +323,7 @@ html, body {
 
 #tl-total {
   font-size: 10px;
-  color: #666;
+  color: #8888aa;
   white-space: nowrap;
 }
 
@@ -377,7 +358,7 @@ html, body {
 }
 
 #stats-turn-label {
-  color: #888;
+  color: #a0a8b8;
   font-size: 11px;
   flex: 1;
 }
@@ -440,8 +421,8 @@ html, body {
   line-height: 1.6;
 }
 
-.stat-lbl { color: #777; font-size: 11px; }
-.stat-val { color: #d0c8a0; font-size: 11px; }
+.stat-lbl { color: #a0a8b8; font-size: 11px; }
+.stat-val { color: #e8e0b8; font-size: 11px; }
 
 /* Unit breakdown */
 .unit-block {
@@ -450,7 +431,7 @@ html, body {
 }
 
 .unit-block-title {
-  color: #555;
+  color: #8890a8;
   font-size: 9px;
   letter-spacing: 1px;
   margin-bottom: 3px;
@@ -462,10 +443,10 @@ html, body {
   justify-content: space-between;
   font-size: 10px;
   line-height: 1.5;
-  color: #b0a880;
+  color: #c8c0a0;
 }
 
-.unit-count { color: #d0c8a0; }
+.unit-count { color: #e8e0b8; }
 
 /* Tech section */
 .tech-block {
@@ -475,7 +456,7 @@ html, body {
 .tech-era {
   font-size: 9px;
   letter-spacing: 2px;
-  color: #555;
+  color: #8890a8;
   text-transform: uppercase;
   margin-top: 6px;
   margin-bottom: 3px;
@@ -496,7 +477,7 @@ html, body {
 }
 
 .tech-known  { /* color/border set inline per civ */ }
-.tech-unknown { color: #3a3a50; border-color: transparent; }
+.tech-unknown { color: #555570; border-color: transparent; }
 
 /* ── Scrollbar style ──────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; }

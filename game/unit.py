@@ -24,28 +24,52 @@ class UnitDef:
     description: str = ""
 
 
+# fmt: off
 _UNIT_LIST = [
-    UnitDef("settler",   "Settler",   40, 0, 1, 1, [], [UnitAbility.FOUND_CITY]),
-    UnitDef("worker",    "Worker",    20, 0, 1, 1, [], [UnitAbility.IMPROVE_TERRAIN]),
-    UnitDef("warrior",   "Warrior",   10, 1, 1, 1, []),
-    UnitDef("phalanx",   "Phalanx",   20, 1, 2, 1, ["bronze_working"]),
-    UnitDef("chariot",   "Chariot",   30, 4, 1, 2, ["wheel", "horseback_riding"]),
-    UnitDef("horseman",  "Horseman",  30, 2, 1, 2, ["horseback_riding"]),
-    UnitDef("legion",    "Legion",    40, 3, 1, 1, ["iron_working"]),
-    UnitDef("catapult",  "Catapult",  40, 6, 1, 1, ["mathematics"]),
-    UnitDef("knight",    "Knight",    60, 5, 2, 2, ["feudalism", "horseback_riding"]),
-    UnitDef("musketeer", "Musketeer", 60, 1, 3, 1, ["gunpowder"]),
-    UnitDef("cannon",    "Cannon",    80, 8, 1, 1, ["gunpowder"]),
-    UnitDef("trireme",   "Trireme",   40, 1, 1, 3, ["map_making"], is_naval=True),
-    UnitDef("caravel",   "Caravel",   60, 2, 1, 3, ["navigation"], is_naval=True),
-    UnitDef("frigate",     "Frigate",     80, 4, 2, 4, ["navigation", "printing_press"], is_naval=True),
-    UnitDef("rifleman",    "Rifleman",    90, 3, 5, 1, ["industrialization"]),
-    UnitDef("ironclad",    "Ironclad",    100, 4, 4, 4, ["steam_engine", "industrialization"], is_naval=True),
-    UnitDef("tank",        "Tank",        120, 8, 3, 3, ["combustion"]),
-    UnitDef("infantry",    "Infantry",    110, 3, 6, 1, ["radio"]),
-    UnitDef("mechinf",    "Mech. Infantry",    110, 4, 8, 2, ["conscription"]),
-    UnitDef("artillery",    "Artillery",    110, 12, 2, 1, ["artillery"]),
+    # ── Civilian ──────────────────────────────────────────────────────────
+    UnitDef("settler",    "Settler",          40,  0,  1, 1, [],                            [UnitAbility.FOUND_CITY]),
+    UnitDef("worker",     "Worker",           40,  0,  1, 1, [],                            [UnitAbility.IMPROVE_TERRAIN]),
+
+    # ── Land – ancient ────────────────────────────────────────────────────
+    UnitDef("militia",    "Militia",          10,  1,  1, 1, []),
+    UnitDef("phalanx",    "Phalanx",          20,  1,  2, 1, ["bronze_working"]),
+    UnitDef("cavalry",    "Cavalry",          20,  2,  1, 2, ["horseback_riding"]),
+    UnitDef("chariot",    "Chariot",          40,  4,  1, 2, ["wheel"]),
+    UnitDef("legion",     "Legion",           20,  3,  1, 1, ["iron_working"]),
+    UnitDef("catapult",   "Catapult",         40,  6,  1, 1, ["mathematics"]),
+
+    # ── Land – medieval ───────────────────────────────────────────────────
+    UnitDef("knight",     "Knight",           40,  4,  2, 2, ["chivalry"]),
+    UnitDef("musketeer",  "Musketeer",        30,  2,  3, 1, ["gunpowder"]),
+    UnitDef("cannon",     "Cannon",           40,  8,  1, 1, ["metallurgy"]),
+
+    # ── Land – industrial / modern ────────────────────────────────────────
+    UnitDef("rifleman",   "Rifleman",         30,  3,  5, 1, ["conscription"]),
+    UnitDef("armor",      "Armor",            80,  10, 5, 3, ["automobile"]),
+    UnitDef("mechinf",    "Mech. Infantry",   50,  6,  6, 3, ["labor_union"]),
+    UnitDef("artillery",  "Artillery",        60,  12, 2, 2, ["robotics"]),
+
+    # ── Naval – ancient / classical ───────────────────────────────────────
+    UnitDef("trireme",    "Trireme",          40,  1,  0, 3, ["map_making"],                is_naval=True),
+    UnitDef("sail",       "Sail",             40,  1,  1, 3, ["navigation"],               is_naval=True),
+
+    # ── Naval – medieval / renaissance ───────────────────────────────────
+    UnitDef("frigate",    "Frigate",          40,  2,  2, 3, ["magnetism"],                is_naval=True),
+    UnitDef("ironclad",   "Ironclad",         60,  4,  4, 4, ["steam_engine"],             is_naval=True),
+
+    # ── Naval – industrial / modern ───────────────────────────────────────
+    UnitDef("cruiser",    "Cruiser",          80,  6,  6, 6, ["combustion"],               is_naval=True),
+    UnitDef("transport",  "Transport",        50,  0,  3, 4, ["industrialization"],        is_naval=True),
+    UnitDef("submarine",  "Submarine",        50,  8,  2, 3, ["mass_production"],          is_naval=True),
+    UnitDef("battleship", "Battleship",       160, 18, 12,4, ["steel"],                    is_naval=True),
+    UnitDef("carrier",    "Carrier",          160, 1,  12, 5, ["advanced_flight"],         is_naval=True),
+
+    # ── Air – not yet supported ───────────────────────────────────────────
+    # UnitDef("fighter",  "Fighter",           60,  4,  2, 10, ["flight"],           is_air=True),
+    # UnitDef("bomber",   "Bomber",           120, 12,  1,  8, ["advanced_flight"],  is_air=True),
+    # UnitDef("nuclear",  "Nuclear",          160, 99,  0, 16, ["rocketry"],         is_air=True),
 ]
+# fmt: on
 
 UNIT_DEFS: Dict[str, UnitDef] = {u.key: u for u in _UNIT_LIST}
 
@@ -113,4 +137,5 @@ class Unit:
             "veteran": self.veteran,
             "fortified": self.fortified,
             "home_city_id": self.home_city_id,
+            "improve_type": self.improve_type,   # "road" | "irrigation" | "mine" | None
         }

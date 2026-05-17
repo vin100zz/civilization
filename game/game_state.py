@@ -21,15 +21,6 @@ from game.tile import Tile
 from game.unit import Unit, UnitAbility, UNIT_DEFS
 
 
-class GameEvent:
-    def __init__(self, turn: int, civ_name: str, message: str):
-        self.turn = turn
-        self.civ_name = civ_name
-        self.message = message
-
-    def to_dict(self) -> dict:
-        return {"turn": self.turn, "civ": self.civ_name, "message": self.message}
-
 
 class GameState:
     def __init__(self, seed: int = 42):
@@ -69,8 +60,8 @@ class GameState:
             # Found starting city
             city = self._found_city(civ, sx, sy)
 
-            # Starting units: 1 settler + 1 warrior
-            warrior = Unit("warrior", civ.id, sx, sy)
+            # Starting units: 1 settler + 1 militia
+            warrior = Unit("militia", civ.id, sx, sy)
             civ.units[warrior.id] = warrior
             self._unit_index[warrior.id] = warrior
 
@@ -89,14 +80,14 @@ class GameState:
         self._city_index[city.id] = city
         self.tiles[y][x].city_id = city.id
         self._allocate_worked_tiles()   # re-allocate all cities after founding
-        city.production_order = ProductionOrder("unit", "warrior")
+        city.production_order = ProductionOrder("unit", "militia")
         return city
 
     # ------------------------------------------------------------------
     # Turn advancement
     # ------------------------------------------------------------------
 
-    def advance_turn(self) -> List[GameEvent]:
+    def advance_turn(self) -> None:
         """Advance the game by one civ's turn.
 
         Each call lets exactly ONE civilization play.  When the last civ of a
@@ -110,8 +101,6 @@ class GameState:
         if not self._pending_civs:
             self.turn += 1
             self.year = self._compute_year()
-            self.events = []
-
             # Allocate tiles once at the start of each round
             self._allocate_worked_tiles()
 
@@ -135,8 +124,6 @@ class GameState:
         if not self._pending_civs:
             self.active_civ_name = None
             self._check_game_over()
-
-        return self.events
 
     # ------------------------------------------------------------------
     # Tile allocation
@@ -244,7 +231,6 @@ class GameState:
         if city.food_stored >= city.food_needed_to_grow():
             city.population += 1
             city.food_stored = 0
-            self._add_event(civ.name, f"{city.name} grew to size {city.population}!")
 
         # Gold and science
         civ.gold += gold - city.upkeep_per_turn()
@@ -269,10 +255,6 @@ class GameState:
         civ.researched_techs.add(tech_key)
         civ.science_stored = 0
         civ.current_research = None
-        self._add_event(
-            civ.name,
-            f"{civ.name} discovered {TECH_DEFS[tech_key].name}!"
-        )
 
     def _complete_production(
         self, city: City, civ: Civilization
@@ -280,8 +262,6 @@ class GameState:
         order = city.production_order
         if order.item_type == "building":
             city.buildings.add(order.item_key)
-            bname = order.item_key.replace("_", " ").title()
-            self._add_event(civ.name, f"{city.name} built a {bname}")
             city.production_order = None
             return None
         else:
@@ -299,8 +279,6 @@ class GameState:
             unit = Unit(order.item_key, civ.id, spawn_x, spawn_y, veteran)
             unit.home_city_id = city.id
             civ.units[unit.id] = unit
-            uname = unit.unit_def.name
-            self._add_event(civ.name, f"{city.name} produced a {uname}")
             city.production_order = None
             return unit
 
@@ -359,9 +337,6 @@ class GameState:
         # Attacker wins automatically when defender has no defence
         if def_str == 0:
             self._remove_unit(defender)
-            self._add_event(att_civ.name,
-                f"{att_civ.name}'s {attacker.unit_def.name} sunk "
-                f"{def_civ.name}'s {defender.unit_def.name}!")
             return True
 
         total = att_str + def_str
@@ -371,15 +346,9 @@ class GameState:
 
         if self.rng.random() < win_prob:
             self._remove_unit(defender)
-            self._add_event(att_civ.name,
-                f"{att_civ.name}'s {attacker.unit_def.name} defeated "
-                f"{def_civ.name}'s {defender.unit_def.name}!")
             return True
         else:
             self._remove_unit(attacker)
-            self._add_event(def_civ.name,
-                f"{def_civ.name}'s {defender.unit_def.name} repelled "
-                f"{att_civ.name}'s {attacker.unit_def.name}!")
             return False
 
     def _remove_unit(self, unit: Unit) -> None:
@@ -407,14 +376,10 @@ class GameState:
             old_civ.cities.pop(city.id, None)
             if not old_civ.cities:
                 old_civ.is_alive = False
-                self._add_event(old_civ.name,
-                                f"{old_civ.name} has been eliminated!")
 
         if new_civ:
             city.civ_id = new_civ.id
             new_civ.cities[city.id] = city
-            self._add_event(new_civ.name,
-                            f"{new_civ.name} captured {city.name}!")
 
     def check_city_capture(self, unit: Unit) -> None:
         """If *unit* is standing on an enemy city tile, capture it.
@@ -445,14 +410,10 @@ class GameState:
         td = TERRAIN_DEFS[tile.terrain]
         if unit.unit_def.is_naval:
             return td.is_water
-        if td.is_passable:
-            return True
-        # Steam engine: land units can traverse water
+        # Land units (including settler & worker) cannot enter any water tile
         if td.is_water:
-            civ = self.civs.get(unit.civ_id)
-            if civ and "steam_engine" in civ.researched_techs:
-                return True
-        return False
+            return False
+        return td.is_passable
 
     def neighboring_enemy_unit(self, unit: Unit, radius: int = 3) -> Optional[Unit]:
         for u in self._unit_index.values():
@@ -488,15 +449,10 @@ class GameState:
             for civ in self.civs.values()
         )
 
-    def _add_event(self, civ_name: str, message: str) -> None:
-        self.events.append(GameEvent(self.turn, civ_name, message))
-
     def _check_game_over(self) -> None:
         alive = [c for c in self.civs.values() if c.is_alive and c.cities]
         if len(alive) <= 1:
             self.is_over = True
-            if alive:
-                self._add_event(alive[0].name, f"{alive[0].name} has won the game!")
 
     # ------------------------------------------------------------------
     # Serialization

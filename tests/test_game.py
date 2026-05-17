@@ -54,10 +54,9 @@ def test_era_order_covers_all_techs():
     assert set(ordered) == set(TECH_DEFS.keys())
 
 def test_modern_tech_chain_availability():
-    available = get_available_techs({"electricity", "democracy"})
-    assert "combustion" in available
-    assert "radio" in available
-    assert "flight" not in available
+    # electronics needs engineering + electricity
+    assert "electronics" not in get_available_techs({"electricity"})
+    assert "electronics" in get_available_techs({"electricity", "engineering"})
 
 
 # ── Buildings ────────────────────────────────────────────────────
@@ -78,19 +77,19 @@ def test_existing_buildings_excluded():
 
 # ── Units ────────────────────────────────────────────────────────
 
-def test_warrior_always_buildable():
-    assert "warrior" in get_buildable_units(set())
+def test_militia_always_buildable():
+    assert "militia" in get_buildable_units(set())
 
-def test_archer_requires_bronze_working():
-    assert "archer" not in get_buildable_units(set())
-    assert "archer" in get_buildable_units({"bronze_working"})
+def test_phalanx_requires_bronze_working():
+    assert "phalanx" not in get_buildable_units(set())
+    assert "phalanx" in get_buildable_units({"bronze_working"})
 
-def test_tank_requires_combustion():
-    assert "tank" not in get_buildable_units({"electricity"})
-    assert "tank" in get_buildable_units({"electricity", "combustion"})
+def test_armor_requires_automobile():
+    assert "armor" not in get_buildable_units({"electricity"})
+    assert "armor" in get_buildable_units({"automobile"})
 
 def test_unit_instance():
-    u = Unit("warrior", "civ1", 5, 5)
+    u = Unit("militia", "civ1", 5, 5)
     assert u.unit_def.attack == 1
     assert u.unit_def.defense == 1
     assert u.moves_left == 1
@@ -142,8 +141,8 @@ def test_city_max_population_increases_with_aqueduct():
 
 def test_city_production_cost_unit():
     city = City("TestCity", "civ1", 10, 10)
-    city.production_order = ProductionOrder("unit", "warrior")
-    assert city.production_cost() == UNIT_DEFS["warrior"].cost
+    city.production_order = ProductionOrder("unit", "militia")
+    assert city.production_cost() == UNIT_DEFS["militia"].cost
 
 def test_city_upkeep_increases_with_buildings():
     city = City("TestCity", "civ1", 10, 10)
@@ -183,7 +182,8 @@ def test_advance_turn_increments():
 
 def test_advance_ten_turns_no_crash():
     gs = GameState(seed=42)
-    for _ in range(10):
+    # advance_turn() plays one civ at a time; NUM_CIVS calls = 1 full turn
+    for _ in range(10 * NUM_CIVS):
         gs.advance_turn()
     assert gs.turn == 10
 

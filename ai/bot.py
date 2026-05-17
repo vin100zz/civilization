@@ -170,7 +170,7 @@ class BotAI:
             if bk in buildable_buildings:
                 return ProductionOrder("building", bk)
 
-        return ProductionOrder("unit", "warrior")
+        return ProductionOrder("unit", "militia")
 
     def _best_military_unit(self, buildable: List[str], naval: bool = False) -> Optional[str]:
         """Choose the strongest attacker-typed military unit (highest attack+defense).

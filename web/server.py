@@ -26,7 +26,7 @@ log = logging.getLogger("civ")
 STATIC_DIR = Path(__file__).parent / "static"
 RESOURCES_DIR = Path(__file__).parent.parent / "resources"
 
-MAX_SNAPSHOTS = 500   # how many past turns to keep in memory
+MAX_SNAPSHOTS = 2000   # how many past turns to keep in memory
 
 # ---------------------------------------------------------------------------
 # Shared game state

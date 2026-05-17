@@ -73,10 +73,17 @@ for (const [key, file] of Object.entries(_RESOURCE_FILE))
 
 // Unit sprites — all known types loaded at startup; missing files → null (fallback)
 const _UNIT_TYPES = [
-  "settler", "worker", "warrior", "phalanx", "chariot", "horseman",
-  "legion", "catapult", "knight", "musketeer", "cannon", "trireme",
-  "caravel", "frigate", "rifleman", "ironclad", "tank", "infantry",
-  "mechinf", "artillery", "archer",
+  // civilian
+  "settler", "worker",
+  // land – ancient
+  "militia", "phalanx", "cavalry", "chariot", "legion", "catapult",
+  // land – medieval / industrial
+  "knight", "musketeer", "cannon", "rifleman", "armor", "mechinf", "artillery",
+  // naval
+  "trireme", "sail", "frigate", "ironclad", "cruiser", "transport",
+  "submarine", "battleship", "carrier",
+  // legacy keys kept for backward-compat with old save files
+  "warrior", "horseman", "tank", "caravel", "infantry",
 ];
 for (const key of _UNIT_TYPES)
   _loadSprite(key, `/resources/unit/${key}.png`);
@@ -328,7 +335,6 @@ function connect() {
     if (newState.game_id !== _gameId) {
       _gameId = newState.game_id;
       _resetHistory();
-      document.getElementById("event-log").innerHTML = "";
       focusCivId = null;
     }
 
@@ -667,6 +673,28 @@ function drawUnits() {
 
     _drawUnitTile(mapCtx, u, color, ux, uy, sz);
 
+    // Worker task badge  (R = road, I = irrigation, M = mine)
+    if (u.type === "worker" && u.improve_type) {
+      const TASK_LABEL = { road: "R", irrigation: "I", mine: "M" };
+      const TASK_COLOR = { road: "#c8901a", irrigation: "#1a66cc", mine: "#555555" };
+      const label = TASK_LABEL[u.improve_type];
+      const bg    = TASK_COLOR[u.improve_type];
+      if (label) {
+        const bx = ux + sz / 2;
+        const by = uy + sz - 4;
+        mapCtx.fillStyle = bg;
+        mapCtx.fillRect(bx - 6, by - 8, 12, 10);
+        mapCtx.strokeStyle = "#000000bb";
+        mapCtx.lineWidth = 1;
+        mapCtx.strokeRect(bx - 6, by - 8, 12, 10);
+        mapCtx.fillStyle = "#ffffff";
+        mapCtx.font = `bold 8px "Courier New"`;
+        mapCtx.textAlign = "center";
+        mapCtx.textBaseline = "middle";
+        mapCtx.fillText(label, bx, by - 3);
+      }
+    }
+
     // Stack badge
     if (units.length > 1) {
       mapCtx.fillStyle = "#ffff00";
@@ -844,15 +872,6 @@ function updateSidebar() {
     civList.appendChild(row);
   }
 
-  // Events
-  const log = document.getElementById("event-log");
-  const evHtml = [...state.events].reverse().map(e =>
-    `<div class="event-entry"><span class="ev-civ" style="color:${civColor(e.civ)}">${e.civ}:</span> ${e.message}</div>`
-  ).join("");
-  if (evHtml) log.innerHTML = evHtml + log.innerHTML;
-
-  // Trim log
-  while (log.children.length > 80) log.removeChild(log.lastChild);
 
   // Game over
   if (state.is_over) {
@@ -1054,19 +1073,23 @@ function _renderStats() {
 
 // ── Tooltip helpers ───────────────────────────────────────────────
 
-/** Group units by type, return HTML with sprite icons and counts. */
+/** Group units by type, return HTML with sprite icons and counts.
+ *  Units are tinted with their civ colour. */
 function _ttUnitGroup(units) {
   const groups = {};
   for (const u of units) {
-    if (!groups[u.type]) groups[u.type] = { name: u.name, count: 0 };
+    if (!groups[u.type]) groups[u.type] = { name: u.name, count: 0, civ_id: u.civ_id };
     groups[u.type].count++;
   }
   const entries = Object.entries(groups);
   if (!entries.length) return "";
   let html = `<div class="tt-units">`;
   for (const [type, g] of entries) {
-    const icon = `<img class="tt-unit-icon" src="/resources/unit/${type}.png" `
-               + `alt="${g.name}" onerror="this.style.display='none'">`;
+    const civ   = state.civs.find(c => c.id === g.civ_id);
+    const color = civ ? civ.color : "#aaaaaa";
+    const icon  = `<img class="tt-unit-icon" src="/resources/unit/${type}.png" `
+                + `alt="${g.name}" style="background:${color}" `
+                + `onerror="this.style.display='none'">`;
     html += `<div class="tt-unit-entry">${icon} ${g.name}`;
     if (g.count > 1) html += ` <b>×${g.count}</b>`;
     html += `</div>`;
@@ -1105,15 +1128,13 @@ function _buildCityTooltip(city) {
   const fPc  = fNd > 0 ? Math.min(100, Math.round(fSt / fNd * 100)) : 0;
 
   html += `<div class="tt-section">`;
-  html += `<div class="tt-section-title">🌾 Food</div>`;
+  html += `<div class="tt-section-title">🌾 Food <span style="float:right;color:${_ttNetColor(fn)}">${_ttSign(fn)}</span></div>`;
   html += `<div class="tt-row tt-sub"><span>Tiles</span><span style="color:#66cc66">+${fgT}</span></div>`;
   if (fgB > 0)
     html += `<div class="tt-row tt-sub"><span>Buildings</span><span style="color:#66cc66">+${fgB}</span></div>`;
   html += `<div class="tt-row"><span>Citizens (${city.population})</span><span style="color:#cc7755">−${fc}</span></div>`;
   if (fw > 0)
     html += `<div class="tt-row"><span>Workers (${fw})</span><span style="color:#cc7755">−${fw}</span></div>`;
-  html += `<div class="tt-row tt-net"><span>Net / turn</span>`
-        + `<span style="color:${_ttNetColor(fn)}">${_ttSign(fn)}</span></div>`;
   html += `<div class="tt-bar-label">Growth: ${fSt} / ${fNd} &nbsp;(${fPc}%)</div>`;
   html += `<div class="tt-bar tt-bar-food"><div class="tt-bar-fill" style="width:${fPc}%"></div></div>`;
   html += `</div>`;
@@ -1127,14 +1148,12 @@ function _buildCityTooltip(city) {
   const pSt  = city.production_stored   ?? 0;
 
   html += `<div class="tt-section">`;
-  html += `<div class="tt-section-title">⚙ Production</div>`;
+  html += `<div class="tt-section-title">⚙ Production <span style="float:right;color:${_ttNetColor(pn)}">${_ttSign(pn)}</span></div>`;
   html += `<div class="tt-row tt-sub"><span>Tiles</span><span style="color:#ffaa44">+${pgT}</span></div>`;
   if (pgB > 0)
     html += `<div class="tt-row tt-sub"><span>Buildings</span><span style="color:#ffaa44">+${pgB}</span></div>`;
   if (pu > 0)
     html += `<div class="tt-row"><span>Unit upkeep (${pu})</span><span style="color:#cc7755">−${pu}</span></div>`;
-  html += `<div class="tt-row tt-net"><span>Net / turn</span>`
-        + `<span style="color:${_ttNetColor(pn)}">${_ttSign(pn)}</span></div>`;
   if (city.production_order) {
     const po   = city.production_order;
     const pPc  = po.cost > 0 ? Math.min(100, Math.round(pSt / po.cost * 100)) : 100;
