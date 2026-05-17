@@ -695,6 +695,23 @@ function drawUnits() {
       }
     }
 
+    // Fortification badge
+    if (u.fortified || u.fortifying) {
+      const bg = u.fortified ? "#8a7020" : "#505060";
+      const bx = ux + sz / 2;
+      const by = uy + sz - 4;
+      mapCtx.fillStyle = bg;
+      mapCtx.fillRect(bx - 6, by - 8, 12, 10);
+      mapCtx.strokeStyle = "#000000bb";
+      mapCtx.lineWidth = 1;
+      mapCtx.strokeRect(bx - 6, by - 8, 12, 10);
+      mapCtx.fillStyle = "#ffffff";
+      mapCtx.font = `bold 8px "Courier New"`;
+      mapCtx.textAlign = "center";
+      mapCtx.textBaseline = "middle";
+      mapCtx.fillText("F", bx, by - 3);
+    }
+
     // Stack badge
     if (units.length > 1) {
       mapCtx.fillStyle = "#ffff00";

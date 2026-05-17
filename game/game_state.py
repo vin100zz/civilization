@@ -333,6 +333,8 @@ class GameState:
         else:
             def_str = float(defender.unit_def.defense)
             def_str *= TERRAIN_DEFS[def_tile.terrain].defense_bonus
+            if defender.fortified:
+                def_str *= 1.5
 
         # Attacker wins automatically when defender has no defence
         if def_str == 0:

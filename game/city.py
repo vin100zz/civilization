@@ -49,9 +49,13 @@ class City:
     def compute_yields(self, tiles: List[List["Tile"]]) -> tuple[int, int, int]:
         """Return total (food, production, trade) from worked tiles."""
         total_food = total_prod = total_trade = 0
-        # City center itself contributes 1 food + 1 production
-        total_food += 1
-        total_prod += 1
+        # City center: terrain yield + bonus +1 food +1 production
+        map_h = len(tiles)
+        map_w = len(tiles[0])
+        cf, cp, ct = tiles[self.y % map_h][self.x % map_w].yields()
+        total_food += cf + 1
+        total_prod += cp + 1
+        total_trade += ct
 
         for tx, ty in self.worked_tiles:
             f, p, t = tiles[ty][tx].yields()

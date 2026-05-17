@@ -270,6 +270,7 @@ class BotAI:
                 continue
             occupant = self.state._unit_at(nx, ny)
             if occupant and occupant.civ_id != unit.civ_id:
+                unit.clear_fortification()
                 won = self.state.attack(unit, nx, ny)
                 unit.moves_left = 0
                 if won and unit.id in self.civ.units:
@@ -279,13 +280,27 @@ class BotAI:
                     self.state.check_city_capture(unit)
                 return True
 
-        # Hold if already at or adjacent to the assigned city
         dist = abs(unit.x - city.x) + abs(unit.y - city.y)
+
+        # Hold if already at or adjacent to the assigned city
         if dist <= 1:
+            if unit.fortified or unit.fortifying:
+                # Already fortifying or fortified — stay put
+                unit.moves_left = 0
+            else:
+                # Start fortifying
+                unit.begin_fortify()
+            return False
+
+        # Need to reposition — unfortify first if needed
+        if unit.fortified:
+            unit.begin_unfortify()
+            return False
+        if unit.fortifying:
+            # Still mid-transition — wait
             unit.moves_left = 0
             return False
 
-        # Otherwise move toward the city
         return self._step_toward(unit, city.x, city.y)
 
     def _act_settler(self, unit: Unit) -> bool:
@@ -670,6 +685,7 @@ class BotAI:
             unit.x = nx
             unit.y = ny
             unit.moves_left = max(0, unit.moves_left - cost)
+            unit.clear_fortification()
             self.state.check_city_capture(unit)
             return True
 

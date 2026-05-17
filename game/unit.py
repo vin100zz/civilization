@@ -103,6 +103,7 @@ class Unit:
         self.moves_left: int = self.unit_def.movement
         self.hp: int = 3
         self.fortified: bool = False
+        self.fortifying: bool = False  # True during the 1-turn fortify/unfortify transition
         self._goal: Optional[tuple] = None  # target (x, y) for pathfinding
         self.home_city_id: Optional[str] = None  # city that produced this unit
 
@@ -117,7 +118,31 @@ class Unit:
         return UNIT_DEFS[self.unit_def_key]
 
     def reset_moves(self):
-        self.moves_left = self.unit_def.movement
+        if self.fortifying:
+            # Complete the pending transition
+            if self.fortified:
+                self.fortified = False   # was unfortifying → now mobile
+            else:
+                self.fortified = True    # was fortifying → now fully fortified
+            self.fortifying = False
+        self.moves_left = 0 if self.fortified else self.unit_def.movement
+
+    def begin_fortify(self) -> None:
+        """Spend this turn fortifying; fully fortified at the start of next turn."""
+        if not self.fortified and not self.fortifying:
+            self.fortifying = True
+            self.moves_left = 0
+
+    def begin_unfortify(self) -> None:
+        """Spend this turn unfortifying; mobile at the start of next turn."""
+        if self.fortified and not self.fortifying:
+            self.fortifying = True   # fortified stays True until reset_moves
+            self.moves_left = 0
+
+    def clear_fortification(self) -> None:
+        """Immediately drop fortification (e.g. when the unit moves or attacks)."""
+        self.fortified = False
+        self.fortifying = False
 
     def has_ability(self, ability: UnitAbility) -> bool:
         return ability in self.unit_def.abilities
@@ -136,6 +161,7 @@ class Unit:
             "moves_left": self.moves_left,
             "veteran": self.veteran,
             "fortified": self.fortified,
+            "fortifying": self.fortifying,
             "home_city_id": self.home_city_id,
             "improve_type": self.improve_type,   # "road" | "irrigation" | "mine" | None
         }
